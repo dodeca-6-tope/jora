@@ -1,0 +1,13 @@
+# Generated executable script
+jira
+
+# Python virtual environment
+.venv/
+
+# Environment configuration (contains sensitive API keys)
+.env
+env.template
+
+# Python cache files
+__pycache__/
+*.pyc
