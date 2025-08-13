@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+
+import sys
+from .base import BaseCommand
+from exceptions import JiraAPIException, GitOperationsException
+
+
+class CommitCommand(BaseCommand):
+    """Handle commit operations with JIRA task titles."""
+
+    def __init__(self, jira_api, git_ops):
+        """Initialize command with required dependencies."""
+        self.jira_api = jira_api
+        self.git_ops = git_ops
+
+    def execute(self):
+        """Stage all changes and commit with the JIRA task title as the commit message."""
+        try:
+            # Get current branch and extract task key
+            current_branch = self.git_ops.get_current_branch()
+            task_key = self.git_ops.extract_task_key_from_branch(current_branch)
+            
+            if not task_key:
+                print(f"❌ Current branch '{current_branch}' does not follow the expected pattern (feature/TASK-KEY)")
+                sys.exit(1)
+            
+            # Fetch task details from JIRA
+            task = self.jira_api.get_task_by_key(task_key)
+            task_title = task.get("fields", {}).get("summary", "No title available")
+            
+            # Stage all changes and commit with task title
+            self.git_ops.stage_and_commit_with_title(task_key, task_title)
+            
+            print(f"✅ Committed changes with title: {task_title}")
+            
+        except GitOperationsException as e:
+            print(f"❌ Git Error: {str(e)}")
+            sys.exit(1)
+        except JiraAPIException as e:
+            print(f"❌ JIRA API Error: {str(e)}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Unexpected Error: {str(e)}")
+            sys.exit(1)
