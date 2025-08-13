@@ -123,10 +123,6 @@ echo -e "4. Edit the .env file with your JIRA credentials"
 echo -e "5. Run ${YELLOW}jira${NC} again to start using the tool"
 echo
 echo -e "${BLUE}Usage examples (from any project directory):${NC}"
-echo -e "  ${YELLOW}jira${NC}                    - List your incomplete tasks"
-echo -e "  ${YELLOW}jira -i${NC}                 - Interactive mode with keyboard navigation"
-echo -e "  ${YELLOW}jira -c${NC}                 - Create a new task"
-echo -e "  ${YELLOW}jira 10${NC}                 - List up to 10 tasks"
-echo -e "  ${YELLOW}jira -i 20${NC}              - Interactive mode with up to 20 tasks"
+echo -e "  ${YELLOW}jira${NC}                    - Start interactive task manager"
 echo
 echo -e "${BLUE}Each project directory will have its own .env file with project-specific settings.${NC}"
