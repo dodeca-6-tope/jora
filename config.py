@@ -12,9 +12,9 @@ class Config:
     """Configuration management for JIRA Task Manager."""
 
     def __init__(self):
-        # Load environment variables
-        script_dir = Path(__file__).parent
-        load_dotenv(script_dir / ".env")
+        # Load environment variables from current working directory
+        current_dir = Path.cwd()
+        load_dotenv(current_dir / ".env")
 
         self.jira_url = os.getenv("JIRA_URL")
         self.jira_email = os.getenv("JIRA_EMAIL")
@@ -26,6 +26,12 @@ class Config:
 
     def validate(self) -> None:
         """Validate that required configuration is present."""
+        if not self.jira_url:
+            raise ConfigException(
+                "Missing JIRA URL configuration. Please set JIRA_URL "
+                "environment variable (e.g., https://yourcompany.atlassian.net)."
+            )
+
         if not self.jira_email or not self.jira_api_key:
             raise ConfigException(
                 "Missing required JIRA configuration. Please set JIRA_EMAIL and "
