@@ -1,4 +1,4 @@
-# Jira Task Manager
+# JORA (Jira Task Manager)
 
 Interactive JIRA task manager with Git/GitHub integration.
 
