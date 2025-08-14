@@ -66,15 +66,19 @@ class GitOperations:
 
     @staticmethod
     def checkout_branch_only(branch_name: str) -> bool:
-        """Checkout to branch without rebasing. Creates branch if it doesn't exist."""
+        """Checkout to branch without rebasing. If the branch doesn't exist,
+        update local develop from origin/develop and create the branch from develop."""
         try:
             # Try to checkout existing branch
             result = subprocess.run(
                 ["git", "checkout", branch_name], capture_output=True
             )
             if result.returncode != 0:
-                # Branch doesn't exist, create it from current branch
-                subprocess.run(["git", "checkout", "-b", branch_name], check=True)
+                # Branch doesn't exist:
+                # 1) Update develop from origin/develop
+                GitOperations.update_develop_branch()
+                # 2) Create new branch from updated develop
+                subprocess.run(["git", "checkout", "-b", branch_name, "develop"], check=True)
             
             return True
         except subprocess.CalledProcessError:
@@ -84,22 +88,30 @@ class GitOperations:
     def switch_and_rebase_branch(branch_name: str) -> bool:
         """Switch to branch and rebase on develop. Creates branch if it doesn't exist."""
         try:
+            # Check if branch already exists locally
+            check_branch = subprocess.run(
+                ["git", "rev-parse", "--verify", branch_name],
+                capture_output=True
+            )
+            branch_existed = check_branch.returncode == 0
+
             # Use the base checkout method
             if not GitOperations.checkout_branch_only(branch_name):
                 return False
 
-            # If branch was just created, we're done (no need to rebase new branch)
-            result = subprocess.run(
-                ["git", "rev-parse", "--verify", f"origin/{branch_name}"],
-                capture_output=True
-            )
-            
-            if result.returncode == 0:
-                # Branch exists on remote, pull latest
-                subprocess.run(["git", "pull", "origin", branch_name], capture_output=True)
+            # If branch existed, just pull latest from remote if it exists there
+            if branch_existed:
+                result = subprocess.run(
+                    ["git", "rev-parse", "--verify", f"origin/{branch_name}"],
+                    capture_output=True
+                )
+                if result.returncode == 0:
+                    # Branch exists on remote, pull latest
+                    subprocess.run(["git", "pull", "origin", branch_name], capture_output=True)
+                return True
 
-            # Always rebase on develop
-            subprocess.run(["git", "rebase", "develop"], check=True)
+            # Branch was newly created - pull and rebase from origin/develop to get latest changes
+            subprocess.run(["git", "pull", "--rebase", "origin", "develop"], check=True)
             return True
         except subprocess.CalledProcessError:
             # Return True even on rebase conflicts as user can resolve manually
