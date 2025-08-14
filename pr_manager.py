@@ -142,7 +142,7 @@ class PRManager:
         if not task_key:
             raise PRManagerException("No task key found")
 
-        branch_name = f"feature/{task_key.lower()}"
+        branch_name = self.git_ops.get_feature_branch_name(task_key)
         pr_title = f"[{task_key}] {task_summary}"
 
         try:

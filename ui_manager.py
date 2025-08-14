@@ -341,12 +341,12 @@ class UIManager:
             self.wait_for_continue()
         elif action_type == "switch_branch":
             try:
-                print("🔄 Preparing branch for development...")
-                branch_name = self.git_ops.switch_to_feature_branch(task)
-                print(f"✅ Switched to '{branch_name}' and rebased on develop")
+                print("🔄 Checking out branch...")
+                branch_name = self.git_ops.checkout_feature_branch(task)
+                print(f"✅ Checked out '{branch_name}'")
                 print(f"\n🎉 Ready to work on {task_key}!")
             except GitOperationsException as e:
-                print(f"❌ Failed to switch branch: {str(e)}")
+                print(f"❌ Failed to checkout branch: {str(e)}")
             self.wait_for_continue()
         elif action_type == "create_pr":
             try:

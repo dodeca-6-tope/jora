@@ -36,6 +36,21 @@ class GitOperations:
         except subprocess.CalledProcessError:
             return False
 
+    def _validate_git_preconditions(self):
+        """Validate git repository state before operations."""
+        if not self.ensure_git_repo():
+            raise GitOperationsException("Not in a git repository")
+
+        if not self.check_git_status():
+            raise GitOperationsException(
+                "Please commit or stash changes before switching branches"
+            )
+
+    @staticmethod
+    def get_feature_branch_name(task_key: str) -> str:
+        """Generate feature branch name from task key."""
+        return f"feature/{task_key.lower()}"
+
     @staticmethod
     def update_develop_branch() -> bool:
         """Update the develop branch to latest. Returns True on success."""
@@ -50,20 +65,38 @@ class GitOperations:
             )
 
     @staticmethod
-    def switch_and_rebase_branch(branch_name: str) -> bool:
-        """Switch to branch and rebase on develop. Creates branch if it doesn't exist."""
+    def checkout_branch_only(branch_name: str) -> bool:
+        """Checkout to branch without rebasing. Creates branch if it doesn't exist."""
         try:
             # Try to checkout existing branch
             result = subprocess.run(
                 ["git", "checkout", branch_name], capture_output=True
             )
             if result.returncode != 0:
-                # Branch doesn't exist, create it from develop
+                # Branch doesn't exist, create it from current branch
                 subprocess.run(["git", "checkout", "-b", branch_name], check=True)
-                return True
+            
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
-            # Branch exists, pull latest if remote exists
-            subprocess.run(["git", "pull", "origin", branch_name], capture_output=True)
+    @staticmethod
+    def switch_and_rebase_branch(branch_name: str) -> bool:
+        """Switch to branch and rebase on develop. Creates branch if it doesn't exist."""
+        try:
+            # Use the base checkout method
+            if not GitOperations.checkout_branch_only(branch_name):
+                return False
+
+            # If branch was just created, we're done (no need to rebase new branch)
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", f"origin/{branch_name}"],
+                capture_output=True
+            )
+            
+            if result.returncode == 0:
+                # Branch exists on remote, pull latest
+                subprocess.run(["git", "pull", "origin", branch_name], capture_output=True)
 
             # Always rebase on develop
             subprocess.run(["git", "rebase", "develop"], check=True)
@@ -72,31 +105,24 @@ class GitOperations:
             # Return True even on rebase conflicts as user can resolve manually
             return True
 
-    def switch_to_feature_branch(self, task: dict) -> str:
-        """Smart function to switch to the feature branch - creates if needed, checks out if exists. Returns branch name."""
-        key = task.get("key", "").lower()
+    def checkout_feature_branch(self, task: dict) -> str:
+        """Checkout to the feature branch - creates if needed, checks out if exists. Does NOT rebase. Returns branch name."""
+        key = task.get("key", "")
         if not key:
             raise GitOperationsException("No task key found")
 
-        branch_name = f"feature/{key}"
+        branch_name = self.get_feature_branch_name(key)
 
-        # Basic checks
-        if not self.ensure_git_repo():
-            raise GitOperationsException("Not in a git repository")
-
-        if not self.check_git_status():
-            raise GitOperationsException(
-                "Please commit or stash changes before switching branches"
-            )
+        # Validate git preconditions
+        self._validate_git_preconditions()
 
         try:
-            if not self.update_develop_branch():
-                raise GitOperationsException("Failed to update develop branch")
-
-            if not self.switch_and_rebase_branch(branch_name):
-                raise GitOperationsException("Failed to switch to feature branch")
+            if not self.checkout_branch_only(branch_name):
+                raise GitOperationsException("Failed to checkout feature branch")
 
             return branch_name
 
         except Exception as e:
-            raise GitOperationsException(f"Failed to switch to branch: {str(e)}")
+            raise GitOperationsException(f"Failed to checkout branch: {str(e)}")
+
+
