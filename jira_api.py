@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import concurrent.futures
 from typing import Dict, List, Optional
 
 import requests
@@ -130,12 +131,12 @@ class JiraAPI:
         except requests.exceptions.RequestException as e:
             raise JiraAPIException(f"Failed to create JIRA task: {str(e)}")
 
-    def fetch_my_incomplete_tasks(self) -> Dict:
+    def _fetch_jira_tasks_only(self) -> Dict:
         """
-        Fetch incomplete JIRA tasks assigned to the authenticated user and enrich with PR information.
-
+        Fetch only JIRA tasks without PR enrichment (for concurrent execution).
+        
         Returns:
-            dict: JIRA search results with tasks enriched with PR information
+            dict: Raw JIRA search results
         """
         # Get account ID for the search
         account_id = self.get_account_id_by_email(self.config.jira_email)
@@ -165,24 +166,46 @@ class JiraAPI:
             "expand": ["changelog"],  # This might contain development info
         }
 
+        # Make the API request
+        response = requests.post(
+            url,
+            auth=auth,
+            headers=headers,
+            data=json.dumps(search_data),
+            timeout=30,
+        )
+
+        # Check if request was successful
+        response.raise_for_status()
+
+        # Get the search results
+        return response.json()
+
+    def fetch_my_incomplete_tasks(self) -> Dict:
+        """
+        Fetch incomplete JIRA tasks assigned to the authenticated user and enrich with PR information.
+        Uses concurrent fetching for better performance.
+
+        Returns:
+            dict: JIRA search results with tasks enriched with PR information
+        """
         try:
-            # Make the API request
-            response = requests.post(
-                url,
-                auth=auth,
-                headers=headers,
-                data=json.dumps(search_data),
-                timeout=30,
-            )
-
-            # Check if request was successful
-            response.raise_for_status()
-
-            # Get the search results
-            jira_results = response.json()
-
-            # Fetch all PRs once for caching
-            all_prs = self.pr_manager.fetch_all_prs()
+            # Use ThreadPoolExecutor to fetch JIRA and GitHub data concurrently
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                # Submit both tasks concurrently
+                jira_future = executor.submit(self._fetch_jira_tasks_only)
+                pr_future = executor.submit(self.pr_manager.fetch_all_prs)
+                
+                # Wait for both to complete and get results
+                try:
+                    jira_results = jira_future.result(timeout=35)  # JIRA has 30s timeout + buffer
+                except Exception as e:
+                    raise JiraAPIException(f"Failed to fetch JIRA tasks: {str(e)}")
+                
+                try:
+                    all_prs = pr_future.result(timeout=15)  # PR fetch timeout + buffer
+                except Exception as e:
+                    all_prs = []  # Continue without PR data if GitHub fails
 
             # Enrich each task with PR information
             issues = jira_results.get("issues", [])

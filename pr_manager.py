@@ -19,7 +19,7 @@ class PRManager:
     def fetch_all_prs(self) -> List[Dict]:
         """Fetch all open PRs once for caching. Returns list of PR objects with approval status."""
         try:
-            # Use GitHub CLI with official JSON fields from documentation
+            # Use GitHub CLI with minimal required fields for better performance
             result = subprocess.run(
                 [
                     "gh",
@@ -27,10 +27,12 @@ class PRManager:
                     "list",
                     "--json",
                     "url,title,headRefName,body,reviews,state",
+                    "--limit",
+                    "100",  # Limit to reasonable number for performance
                 ],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=8,  # Reduced from 10s to 8s
             )
 
             if result.returncode == 0 and result.stdout.strip():
