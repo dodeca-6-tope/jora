@@ -465,11 +465,10 @@ class UIManager:
             self.clear_screen()
 
             if not issues:
-                print("✨ No incomplete tasks assigned to you.")
+                self.print_header("✨ No incomplete tasks assigned to you.")
                 print(
                     "Press 'n' to create new task, 'r' to refresh, 'h' for help, 'q'/ESC to quit"
                 )
-                self.print_header("", 80)
             else:
                 self.print_header(
                     f"📋 Found {len(issues)} incomplete tasks (sorted by PR status):"
