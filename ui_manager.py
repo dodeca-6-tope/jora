@@ -264,8 +264,8 @@ class UIManager:
         summary = fields.get("summary", "No summary")
         priority = fields.get("priority", {}).get("name", "Unknown")
 
-        # Truncate summary if too long - adjust for PR indicators
-        max_summary_length = 55  # Reduced to make room for PR indicators
+        # Truncate summary if too long
+        max_summary_length = 55
         if len(summary) > max_summary_length:
             summary = summary[: max_summary_length - 3] + "..."
 
@@ -298,9 +298,11 @@ class UIManager:
                 )
 
         # Create the minimal one-line output
-        output = f"{priority_indicator} {key[:7]:<7} {summary}"
-        if pr_indicators:
-            output += f" {pr_indicators}"
+        # Place PR indicator immediately after the priority emoji.
+        # Use a fixed-width placeholder when there's no PR to keep titles aligned.
+        # Use two-space slot when no PR to align with emoji width on most terminals
+        pr_slot = pr_indicators if pr_indicators else "  "
+        output = f"{priority_indicator} {pr_slot} {key[:7]:<7} {summary}"
 
         return output
 
