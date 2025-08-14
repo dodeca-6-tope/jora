@@ -65,9 +65,10 @@ class GitOperations:
             )
 
     @staticmethod
-    def checkout_branch_only(branch_name: str) -> bool:
-        """Checkout to branch without rebasing. If the branch doesn't exist,
-        update local develop from origin/develop and create the branch from develop."""
+    def checkout_or_create_branch(branch_name: str) -> bool:
+        """Checkout the branch if it exists locally; otherwise update local
+        develop from origin/develop and create the branch from develop.
+        Does not perform any rebase operations."""
         try:
             # Try to checkout existing branch
             result = subprocess.run(
@@ -84,38 +85,6 @@ class GitOperations:
         except subprocess.CalledProcessError:
             return False
 
-    @staticmethod
-    def switch_and_rebase_branch(branch_name: str) -> bool:
-        """Switch to branch and rebase on develop. Creates branch if it doesn't exist."""
-        try:
-            # Check if branch already exists locally
-            check_branch = subprocess.run(
-                ["git", "rev-parse", "--verify", branch_name],
-                capture_output=True
-            )
-            branch_existed = check_branch.returncode == 0
-
-            # Use the base checkout method
-            if not GitOperations.checkout_branch_only(branch_name):
-                return False
-
-            # If branch existed, just pull latest from remote if it exists there
-            if branch_existed:
-                result = subprocess.run(
-                    ["git", "rev-parse", "--verify", f"origin/{branch_name}"],
-                    capture_output=True
-                )
-                if result.returncode == 0:
-                    # Branch exists on remote, pull latest
-                    subprocess.run(["git", "pull", "origin", branch_name], capture_output=True)
-                return True
-
-            # Branch was newly created - pull and rebase from origin/develop to get latest changes
-            subprocess.run(["git", "pull", "--rebase", "origin", "develop"], check=True)
-            return True
-        except subprocess.CalledProcessError:
-            # Return True even on rebase conflicts as user can resolve manually
-            return True
 
     def checkout_feature_branch(self, task: dict) -> str:
         """Checkout to the feature branch - creates if needed, checks out if exists. Does NOT rebase. Returns branch name."""
@@ -129,7 +98,7 @@ class GitOperations:
         self._validate_git_preconditions()
 
         try:
-            if not self.checkout_branch_only(branch_name):
+            if not self.checkout_or_create_branch(branch_name):
                 raise GitOperationsException("Failed to checkout feature branch")
 
             return branch_name

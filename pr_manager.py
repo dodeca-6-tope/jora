@@ -152,12 +152,8 @@ class PRManager:
             if not self.git_ops.ensure_git_repo():
                 raise PRManagerException("Not in a git repository")
 
-            # Update develop branch to latest
-            if not self.git_ops.update_develop_branch():
-                raise PRManagerException("Failed to update develop branch")
-
-            # Automatically switch to or create the feature branch
-            if not self.git_ops.switch_and_rebase_branch(branch_name):
+            # Switch to or create the feature branch (handles updating develop if creating)
+            if not self.git_ops.checkout_or_create_branch(branch_name):
                 raise PRManagerException("Failed to switch to feature branch")
 
             # Check for changes to commit
