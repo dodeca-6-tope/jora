@@ -474,10 +474,6 @@ class UIManager:
                 self.print_header(
                     f"📋 Found {len(issues)} incomplete tasks (sorted by PR status):"
                 )
-                print(
-                    "Use ↑/↓ arrow keys to navigate, Enter for actions, 'n' to create new task, 'c' to checkout and exit, 'r' to refresh, 'q'/ESC to quit"
-                )
-                self.print_header("", 80)
 
                 # Display tasks with selection indicator
                 formatted_tasks = [
