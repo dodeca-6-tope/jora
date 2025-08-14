@@ -5,6 +5,7 @@ import subprocess
 from typing import Dict, List, Optional
 
 from git_operations import GitOperations
+from config import Config
 from exceptions import PRManagerException
 
 
@@ -13,6 +14,7 @@ class PRManager:
 
     def __init__(self):
         self.git_ops = GitOperations()
+        self.config = Config()
 
     def fetch_all_prs(self) -> List[Dict]:
         """Fetch all open PRs once for caching. Returns list of PR objects with approval status."""
@@ -173,8 +175,13 @@ class PRManager:
                 ["git", "push", "--set-upstream", "origin", branch_name], check=True
             )
 
+            # Build PR body with a direct link to the JIRA task
+            task_link = f"{self.config.jira_url.rstrip('/')}/browse/{task_key}"
+            pr_body = f"Task: {task_link}\n\n---\n*Created by [Jora](https://github.com/dodeca-6-tope/jora)*"
+
             subprocess.run(
-                ["gh", "pr", "create", "--title", pr_title, "--body", ""], check=True
+                ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
+                check=True,
             )
 
             return branch_name
