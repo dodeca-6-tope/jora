@@ -518,17 +518,7 @@ class UIManager:
                         print(
                             f"\n🎉 Task created successfully: {new_task.get('key', 'Unknown')}"
                         )
-                        print("🔄 Refreshing task list...")
-                        # Refresh the task list by re-fetching
-                        try:
-                            result = self.jira_api.fetch_my_incomplete_tasks()
-                            issues[:] = result.get(
-                                "issues", []
-                            )  # Update the list in place
-                            selected_index = 0  # Reset selection to top
-                            print("✅ Task list refreshed!")
-                        except JiraAPIException as e:
-                            print(f"❌ Error refreshing task list: {str(e)}")
+                        print("💡 Press 'r' to refresh the task list to see your new task")
                     self.wait_for_continue()
                 elif key == "r":
                     # Refresh task list and PR information
