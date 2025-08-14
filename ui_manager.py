@@ -466,9 +466,7 @@ class UIManager:
 
             if not issues:
                 self.print_header("✨ No incomplete tasks assigned to you.")
-                print(
-                    "Press 'n' to create new task, 'r' to refresh, 'h' for help, 'q'/ESC to quit"
-                )
+                print("Press 'h' for help or 'n' to create a new task")
             else:
                 self.print_header(
                     f"📋 Found {len(issues)} incomplete tasks (sorted by PR status):"
@@ -482,9 +480,7 @@ class UIManager:
                 self.display_menu_items(formatted_tasks, selected_index)
 
                 self.print_header("", 80)
-                print(
-                    f"Selected: {selected_index + 1}/{len(issues)} | Press 'h' for help, 'c' to checkout and exit, 'r' to refresh"
-                )
+                print(f"Selected: {selected_index + 1}/{len(issues)} | Press 'h' for help")
 
             # Get user input
             try:
