@@ -368,6 +368,21 @@ class UIManager:
             self.wait_for_continue()
         # "back" action just returns normally to exit the action menu
 
+    def checkout_selected_task_branch(self, task: Dict) -> None:
+        """Handle checkout of selected task's feature branch."""
+        try:
+            task_key = task.get("key", "Unknown")
+            print(f"\n🔄 Checking out branch for {task_key}...")
+            
+            branch_name = self.git_ops.checkout_feature_branch(task)
+            print(f"✅ Checked out '{branch_name}'")
+            print(f"\n🎉 Ready to work on {task_key}!")
+            
+        except GitOperationsException as e:
+            print(f"❌ Failed to checkout branch: {str(e)}")
+        except Exception as e:
+            print(f"❌ Unexpected error: {str(e)}")
+
     def show_task_action_menu(self, task: Dict) -> None:
         """Show action menu for the selected task and handle user choice."""
         # Use cached PR information if available
@@ -449,7 +464,7 @@ class UIManager:
                     f"📋 Found {len(issues)} incomplete tasks (sorted by PR status):"
                 )
                 print(
-                    "Use ↑/↓ arrow keys to navigate, Enter for actions, 'n' to create new task, 'r' to refresh, 'q'/ESC to quit"
+                    "Use ↑/↓ arrow keys to navigate, Enter for actions, 'n' to create new task, 'c' to checkout selected task's branch, 'r' to refresh, 'q'/ESC to quit"
                 )
                 self.print_header("", 80)
 
@@ -462,7 +477,7 @@ class UIManager:
 
                 self.print_header("", 80)
                 print(
-                    f"Selected: {selected_index + 1}/{len(issues)} | Press 'h' for help, 'r' to refresh"
+                    f"Selected: {selected_index + 1}/{len(issues)} | Press 'h' for help, 'c' to checkout selected task's branch, 'r' to refresh"
                 )
 
             # Get user input
@@ -517,11 +532,20 @@ class UIManager:
                     except JiraAPIException as e:
                         print(f"❌ Error refreshing task list: {str(e)}")
                         self.wait_for_continue()
+                elif key == "c":
+                    # Checkout selected task's branch
+                    if issues:  # Only if tasks exist
+                        selected_task = issues[selected_index]
+                        self.checkout_selected_task_branch(selected_task)
+                    else:
+                        print("\n❌ No tasks available to checkout branch for")
+                    self.wait_for_continue()
                 elif key == "h":
                     print("\n📖 Help:")
                     print("  ↑/↓     Navigate tasks")
                     print("  Enter   Show action menu (browser/branch)")
                     print("  n       Create new task")
+                    print("  c       Checkout selected task's branch")
                     print("  r       Refresh task list and PR information")
                     print("  q/ESC   Quit")
                     print("  h       Show this help")
