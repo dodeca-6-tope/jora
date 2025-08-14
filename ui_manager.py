@@ -347,15 +347,19 @@ class UIManager:
                 branch_name = self.git_ops.checkout_feature_branch(task)
                 print(f"✅ Checked out '{branch_name}'")
                 print(f"\n🎉 Ready to work on {task_key}!")
+                # Exit the tool immediately after successful checkout (clean exit)
+                sys.exit(0)
             except GitOperationsException as e:
                 print(f"❌ Failed to checkout branch: {str(e)}")
-            self.wait_for_continue()
+                self.wait_for_continue()
         elif action_type == "create_pr":
             try:
                 print("🔄 Creating pull request...")
                 branch_name = self.pr_manager.create_new_pr(task)
                 print(f"✅ PR created successfully on branch '{branch_name}'")
                 print(f"\n🎉 PR created for {task_key}!")
+                # Exit the tool immediately after successful PR creation (branch is created/switched)
+                sys.exit(0)
             except PRManagerException as e:
                 print(f"❌ Failed to create PR: {str(e)}")
             self.wait_for_continue()
