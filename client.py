@@ -5,11 +5,14 @@ import os
 import subprocess
 import concurrent.futures
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
+import diskcache as dc
+import humanize
 
 from exceptions import GitOperationsException, PRManagerException, JiraAPIException, ConfigException
 
@@ -20,6 +23,9 @@ class JoraClient:
     # JIRA-specific configuration
     MAX_RESULTS = 50
     EXCLUDED_STATUSES = ["Done", "Resolved", "Closed", "Cancelled"]
+    
+    # Cache configuration
+    CACHE_TTL_SECONDS = 86400  # 1 day (24 * 60 * 60)
 
     def __init__(self):
         # Load environment variables from current working directory
@@ -30,6 +36,10 @@ class JoraClient:
         self.jira_email = os.getenv("JIRA_EMAIL")
         self.jira_api_key = os.getenv("JIRA_API_KEY")
         self.jira_project_key = os.getenv("JIRA_PROJECT_KEY")
+        
+        # Initialize cache
+        cache_dir = Path.cwd() / ".cache"
+        self.cache = dc.Cache(str(cache_dir))
         
         # Validate configuration
         if not self.jira_url:
@@ -604,14 +614,45 @@ class JoraClient:
         except requests.exceptions.RequestException as e:
             raise JiraAPIException(f"Failed to fetch task {task_key}: {str(e)}")
 
-    def fetch_my_incomplete_tasks(self) -> Dict:
+    def get_cache_timestamp_formatted(self) -> Optional[str]:
+        """Get the cache timestamp in a user-friendly format."""
+        # Get tasks data with expiration metadata to calculate insertion time
+        result = self.cache.get("tasks_data", expire_time=True)
+        if not result or result[0] is None:
+            return None
+        
+        _, expire_time = result
+        # Check if expire_time is None (cache entry without expiration)
+        if expire_time is None:
+            return None
+            
+        # Calculate insertion time by subtracting TTL from expiration time
+        store_time = datetime.fromtimestamp(expire_time - self.CACHE_TTL_SECONDS)
+        return f"Updated {humanize.naturaltime(store_time)}"
+
+    def fetch_my_incomplete_tasks(self, force_refresh: bool = False) -> Dict:
         """
         Fetch incomplete JIRA tasks assigned to the authenticated user and enrich with PR information.
-        Uses concurrent fetching for better performance.
+        Uses disk cache for persistent memoization with force_refresh option.
+
+        Args:
+            force_refresh (bool): If True, clear cache and fetch fresh data
 
         Returns:
             dict: JIRA search results with tasks enriched with PR information
         """
+        # Clear the cache if force refresh is requested
+        if force_refresh:
+            self.cache.clear()
+        
+        # Check if we have cached data (diskcache handles expiration automatically)
+        cached_data = self.cache.get("tasks_data")
+        if cached_data is not None:
+            return cached_data
+        
+        # No cached data, fetch fresh
+        fetch_time = datetime.now()
+        
         try:
             # Use ThreadPoolExecutor to fetch JIRA and GitHub data concurrently
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -649,6 +690,9 @@ class JoraClient:
 
             # Sort tasks by PR status priority
             issues.sort(key=self._get_pr_sort_priority)
+
+            # Cache the results with 1 day expiration
+            self.cache.set("tasks_data", jira_results, expire=self.CACHE_TTL_SECONDS)
 
             # Return the enriched and sorted search results
             return jira_results

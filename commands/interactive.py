@@ -32,8 +32,6 @@ class InteractiveCommand(BaseCommand):
         try:
             result = self.client.fetch_my_incomplete_tasks()
             issues = result.get("issues", [])
-            print(f"✅ Found {len(issues)} tasks (sorted by PR status)")
-            print()
         except JiraAPIException as e:
             print(f"❌ JIRA API Error: {str(e)}")
             sys.exit(1)
@@ -443,6 +441,12 @@ class InteractiveCommand(BaseCommand):
                 self.print_header(
                     f"📋 Found {len(issues)} incomplete tasks (sorted by PR status):"
                 )
+                
+                # Show cache timestamp
+                cache_timestamp = self.client.get_cache_timestamp_formatted()
+                if cache_timestamp:
+                    print(f"📅 {cache_timestamp}")
+                    print()
 
                 # Display tasks with selection indicator
                 formatted_tasks = [
@@ -487,7 +491,7 @@ class InteractiveCommand(BaseCommand):
                     # Refresh task list and PR information
                     print("\n🔄 Refreshing task list and PR information...")
                     try:
-                        result = self.client.fetch_my_incomplete_tasks()
+                        result = self.client.fetch_my_incomplete_tasks(force_refresh=True)
                         issues[:] = result.get("issues", [])  # Update the list in place
                         selected_index = 0  # Reset selection to top
                         print("✅ Task list and PR information refreshed!")
