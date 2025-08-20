@@ -348,6 +348,57 @@ class JoraClient:
         except Exception as e:
             raise PRManagerException(f"Failed to create PR: {str(e)}")
 
+    # ==================== HIGH-LEVEL OPERATIONS ====================
+
+    def commit_current_task(self) -> str:
+        """
+        Stage all changes and commit with the JIRA task title from the current branch.
+        
+        Returns:
+            str: The commit message used (task title)
+            
+        Raises:
+            GitOperationsException: If git operations fail
+            JiraAPIException: If JIRA API calls fail
+        """
+        # Get current branch and extract task key
+        current_branch = self.get_current_branch()
+        task_key = self.extract_task_key_from_branch(current_branch)
+        
+        if not task_key:
+            raise GitOperationsException(
+                f"Current branch '{current_branch}' does not follow the expected pattern (feature/TASK-KEY)"
+            )
+        
+        # Fetch task details from JIRA
+        task = self.get_task_by_key(task_key)
+        task_title = task.get("fields", {}).get("summary", "No title available")
+        
+        # Stage all changes and commit with task title
+        self.stage_and_commit_with_title(task_title)
+        
+        return task_title
+
+    def switch_to_task_branch(self, task_key: str) -> str:
+        """
+        Switch to the feature branch for the given task key.
+        
+        Args:
+            task_key (str): The JIRA task key
+            
+        Returns:
+            str: The branch name that was checked out
+            
+        Raises:
+            GitOperationsException: If git operations fail
+        """
+        self.checkout_task_branch(task_key, create_new=True)
+        return self.get_feature_branch_name(task_key)
+
+
+
+
+
     # ==================== JIRA OPERATIONS ====================
 
     def open_task_in_browser(self, task: Dict):

@@ -255,8 +255,7 @@ class InteractiveCommand(BaseCommand):
         elif action_type == "switch_branch":
             try:
                 print("🔄 Checking out branch...")
-                self.client.checkout_task_branch(task_key, create_new=True)
-                branch_name = self.client.get_feature_branch_name(task_key)
+                branch_name = self.client.switch_to_task_branch(task_key)
                 print(f"✅ Checked out '{branch_name}'")
                 print(f"\n🎉 Ready to work on {task_key}!")
                 # Exit the tool immediately after successful checkout (clean exit)
@@ -349,8 +348,7 @@ class InteractiveCommand(BaseCommand):
         try:
             task_key = task.get("key", "Unknown")
             print(f"\n🔄 Checking out branch for {task_key}...")
-            self.client.checkout_task_branch(task_key, create_new=True)
-            branch_name = self.client.get_feature_branch_name(task_key)
+            branch_name = self.client.switch_to_task_branch(task_key)
             print(f"✅ Checked out '{branch_name}'")
             print(f"\n🎉 Ready to work on {task_key}!")
             
