@@ -29,7 +29,7 @@ class CommitCommand(BaseCommand):
             task_title = task.get("fields", {}).get("summary", "No title available")
             
             # Stage all changes and commit with task title
-            self.git_ops.stage_and_commit_with_title(task_key, task_title)
+            self.git_ops.stage_and_commit_with_title(task_title)
             
             print(f"✅ Committed changes with title: {task_title}")
             

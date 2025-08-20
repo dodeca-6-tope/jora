@@ -258,7 +258,9 @@ class InteractiveCommand(BaseCommand):
         elif action_type == "switch_branch":
             try:
                 print("🔄 Checking out branch...")
-                branch_name = self.git_ops.checkout_feature_branch(task)
+                branch_name = self.git_ops.get_feature_branch_name(task_key)
+
+                self.git_ops.checkout_branch(branch_name, create_new=True)
                 print(f"✅ Checked out '{branch_name}'")
                 print(f"\n🎉 Ready to work on {task_key}!")
                 # Exit the tool immediately after successful checkout (clean exit)
@@ -269,9 +271,8 @@ class InteractiveCommand(BaseCommand):
         elif action_type == "create_pr":
             try:
                 print("🔄 Creating pull request...")
-                task_key = task.get("key", "")
                 branch_name = self.git_ops.get_feature_branch_name(task_key)
-                self.pr_manager.create_new_pr(branch_name, pr_title=f"[{task_key}] {task.get("fields", {}).get("summary", "No summary")}", pr_body=self.jira_api.create_pr_body(task_key))
+                self.pr_manager.create_new_pr(branch_name, task)
                 print(f"✅ PR created successfully on branch '{branch_name}'")
                 print(f"\n🎉 PR created for {task_key}!")
                 # Exit the tool immediately after successful PR creation (branch is created/switched)
@@ -293,10 +294,9 @@ class InteractiveCommand(BaseCommand):
     def checkout_selected_task_branch(self, task: Dict) -> bool:
         """Handle checkout of selected task's feature branch and return success status."""
         try:
-            task_key = task.get("key", "Unknown")
             print(f"\n🔄 Checking out branch for {task_key}...")
-            
-            branch_name = self.git_ops.checkout_feature_branch(task)
+            branch_name = self.git_ops.get_feature_branch_name(task_key)
+            self.git_ops.checkout_branch(branch_name, create_new=True)
             print(f"✅ Checked out '{branch_name}'")
             print(f"\n🎉 Ready to work on {task_key}!")
             

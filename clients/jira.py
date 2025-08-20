@@ -131,9 +131,6 @@ class JiraAPI:
         """Get the project key for display purposes."""
         return self.jira_project_key
 
-    def create_pr_body(self, task_key: str) -> str:
-        return f"[{task_key}]\n\n---\n*Created by [Jora](https://github.com/dodeca-6-tope/jora)*"
-
     def get_account_id_by_email(self, email: str) -> str:
         """
         Get JIRA account ID using email address.

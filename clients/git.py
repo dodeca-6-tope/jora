@@ -47,11 +47,6 @@ class GitOperations:
             )
 
     @staticmethod
-    def get_feature_branch_name(task_key: str) -> str:
-        """Generate feature branch name from task key."""
-        return f"feature/{task_key.lower()}"
-
-    @staticmethod
     def get_current_branch() -> str:
         """Get the name of the current git branch."""
         try:
@@ -74,7 +69,12 @@ class GitOperations:
         return ""
 
     @staticmethod
-    def stage_and_commit_with_title(task_key: str, task_title: str) -> None:
+    def get_feature_branch_name(task_key: str) -> str:
+        """Generate feature branch name from task key."""
+        return f"feature/{task_key.lower()}"
+
+    @staticmethod
+    def stage_and_commit_with_title(commit_message: str) -> None:
         """Stage all changes and commit with the given task title."""
         try:
             # Check if we're in a git repository
@@ -95,9 +95,6 @@ class GitOperations:
             if not result.stdout.strip():
                 raise GitOperationsException("No changes to commit")
             
-            # Create commit message with just the task title
-            commit_message = task_title
-            
             # Commit the changes
             subprocess.run(["git", "commit", "-m", commit_message], check=True)
             
@@ -117,12 +114,14 @@ class GitOperations:
                 "Could not update develop branch - ensure it exists"
             )
 
-    @staticmethod
-    def checkout_branch(branch_name: str, create_new: bool) -> bool:
+    def checkout_branch(self, branch_name: str, create_new: bool) -> bool:
         """Checkout the branch if it exists locally; optionally create it if it doesn't exist.
         If create_new is True and branch doesn't exist, updates local develop from origin/develop 
         and creates the branch from develop. Does not perform any rebase operations."""
         try:
+            # Validate repo and clean state before switching branches
+            self._validate_git_preconditions()
+
             # Try to checkout existing branch
             result = subprocess.run(
                 ["git", "checkout", branch_name], capture_output=True
@@ -131,16 +130,16 @@ class GitOperations:
                 if create_new:
                     # Branch doesn't exist:
                     # 1) Update develop from origin/develop
-                    GitOperations.update_develop_branch()
+                    self.update_develop_branch()
                     # 2) Create new branch from updated develop
                     subprocess.run(["git", "checkout", "-b", branch_name, "develop"], check=True)
                 else:
                     # Branch doesn't exist and we're not allowed to create it
-                    return False
-            
+                    raise GitOperationsException("Branch does not exist - no changes to create PR from")
+
             return True
-        except subprocess.CalledProcessError:
-            return False
+        except subprocess.CalledProcessError as e:
+            raise GitOperationsException(f"Failed to checkout branch: {str(e)}")
 
 
     @staticmethod
@@ -166,25 +165,4 @@ class GitOperations:
             )
         except subprocess.CalledProcessError as e:
             raise GitOperationsException(f"Failed to push branch: {str(e)}")
-
-    def checkout_feature_branch(self, task: dict) -> str:
-        """Checkout to the feature branch - creates if needed, checks out if exists. Does NOT rebase. Returns branch name."""
-        key = task.get("key", "")
-        if not key:
-            raise GitOperationsException("No task key found")
-
-        branch_name = self.get_feature_branch_name(key)
-
-        # Validate git preconditions
-        self._validate_git_preconditions()
-
-        try:
-            if not self.checkout_branch(branch_name, create_new=True):
-                raise GitOperationsException("Failed to checkout feature branch")
-
-            return branch_name
-
-        except Exception as e:
-            raise GitOperationsException(f"Failed to checkout branch: {str(e)}")
-
 

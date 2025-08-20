@@ -121,15 +121,25 @@ class PRManager:
         else:  # NO_REVIEWS
             return 2  # PR exists but no reviews - third priority
 
-    def create_new_pr(self, branch_name: str, pr_title: str, pr_body: str = None):
+    def create_new_pr(self, branch_name: str, task: Dict):
+        task_key = task.get("key", "Unknown")
+
+        if not task_key:
+            raise PRManagerException("No task key found")
+
+        pr_title = f"[{task_key}] {task.get("fields", {}).get("summary", "No summary")}"
+        pr_body = f"[{task_key}]\n\n---\n*Created by [Jora](https://github.com/dodeca-6-tope/jora)*"
+        
         try:
             # Ensure we're in a git repository
             if not self.git_ops.ensure_git_repo():
                 raise PRManagerException("Not in a git repository")
 
             # Switch to existing feature branch (don't create new as it would have no changes)
-            if not self.git_ops.checkout_branch(branch_name, create_new=False):
-                raise PRManagerException("Branch does not exist - no changes to create PR from")
+            try:
+                self.git_ops.checkout_branch(branch_name, create_new=False)
+            except GitOperationsException as e:
+                raise PRManagerException(str(e))
 
             # Check for changes to commit
             if not self.git_ops.has_changes_from_branch("develop"):
