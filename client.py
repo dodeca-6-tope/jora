@@ -50,8 +50,6 @@ class JoraClient:
                 "environment variable."
             )
 
-    # ==================== GIT OPERATIONS ====================
-
     @staticmethod
     def ensure_git_repo() -> bool:
         """Check if we're in a git repository."""
@@ -181,8 +179,6 @@ class JoraClient:
             raise GitOperationsException(f"Failed to checkout branch: {str(e)}")
 
 
-
-    # ==================== GITHUB/PR OPERATIONS ====================
 
     def _fetch_all_prs(self) -> List[Dict]:
         """Fetch all open PRs once for caching. Returns list of PR objects with approval status."""
@@ -348,8 +344,6 @@ class JoraClient:
         except Exception as e:
             raise PRManagerException(f"Failed to create PR: {str(e)}")
 
-    # ==================== HIGH-LEVEL OPERATIONS ====================
-
     def commit_current_task(self) -> str:
         """
         Stage all changes and commit with the JIRA task title from the current branch.
@@ -398,8 +392,6 @@ class JoraClient:
 
 
 
-
-    # ==================== JIRA OPERATIONS ====================
 
     def open_task_in_browser(self, task: Dict):
         """Open a JIRA task in the default web browser."""
