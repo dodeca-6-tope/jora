@@ -68,6 +68,18 @@ jora --commit-with-title
 
 This command extracts the task key from your current branch (e.g., `feature/PROJ-123`) and uses the JIRA task title as the commit message.
 
+### PR Mode
+
+Create a pull request for the task associated with the current branch:
+
+```bash
+jora -p
+# or
+jora --create-pr
+```
+
+This command extracts the task key from your current branch (e.g., `feature/PROJ-123`), fetches the task details from JIRA, and creates a PR using the GitHub CLI with the task title and key.
+
 ### Help
 
 View all available options:

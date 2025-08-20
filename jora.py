@@ -5,6 +5,7 @@ import sys
 from client import JoraClient
 from commands.commit import CommitCommand
 from commands.interactive import InteractiveCommand
+from commands.pr import PRCommand
 from exceptions import ConfigException
 
 
@@ -15,6 +16,8 @@ def main():
                        help="Stage all changes and commit with the JIRA task title from the current branch")
     parser.add_argument("-i", "--interactive", action="store_true", 
                        help="Run the interactive Jora task manager")
+    parser.add_argument("-p", "--create-pr", action="store_true", 
+                       help="Create a pull request for the task associated with the current branch")
     
     args = parser.parse_args()
     
@@ -39,6 +42,8 @@ def main():
             command = CommitCommand(client)
         elif args.interactive:
             command = InteractiveCommand(client)
+        elif args.create_pr:
+            command = PRCommand(client)
         else:
             raise ValueError("No valid command found in arguments")
         

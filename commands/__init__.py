@@ -5,5 +5,6 @@
 from .base import BaseCommand
 from .commit import CommitCommand
 from .interactive import InteractiveCommand
+from .pr import PRCommand
 
-__all__ = ['BaseCommand', 'CommitCommand', 'InteractiveCommand']
+__all__ = ['BaseCommand', 'CommitCommand', 'InteractiveCommand', 'PRCommand']
