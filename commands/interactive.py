@@ -237,11 +237,6 @@ class InteractiveCommand(BaseCommand):
         self.print_header("📋 Selected Task:")
         print(f"Key: {task_key}")
         print(f"Summary: {summary}")
-        if pr_exists:
-            print("🔗 PR Status: Existing PR found")
-        else:
-            print("📝 PR Status: No PR found")
-        self.print_header("", 80)
 
     def _execute_task_action(self, action_type: str, task: Dict) -> None:
         """Execute a task action."""
