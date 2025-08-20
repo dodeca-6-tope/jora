@@ -264,7 +264,7 @@ class JoraClient:
                 }
         return None
 
-    def _analyze_pr_reviews(self, reviews: List[Dict]) -> str:
+    def analyze_pr_reviews(self, reviews: List[Dict]) -> str:
         """
         Analyze PR reviews to determine the overall status.
 
@@ -316,7 +316,7 @@ class JoraClient:
             return 4  # No PR - lowest priority
 
         reviews = task.get("_pr_reviews", [])
-        review_status = self._analyze_pr_reviews(reviews)
+        review_status = self.analyze_pr_reviews(reviews)
 
         if review_status == "APPROVED":
             return 0  # All reviews approved - highest priority
@@ -369,64 +369,6 @@ class JoraClient:
             raise PRManagerException(f"Failed to create PR: {str(e)}")
 
     # ==================== JIRA OPERATIONS ====================
-
-    def format_task_output(self, task: Dict) -> str:
-        """
-        Format a single task for console output (minimal one-line format).
-
-        Args:
-            task (dict): Task data from JIRA API
-
-        Returns:
-            str: Formatted task string
-        """
-        fields = task.get("fields", {})
-        key = task.get("key", "Unknown")
-
-        # Extract basic information
-        summary = fields.get("summary", "No summary")
-        priority = fields.get("priority", {}).get("name", "Unknown")
-
-        # Truncate summary if too long
-        max_summary_length = 55
-        if len(summary) > max_summary_length:
-            summary = summary[: max_summary_length - 3] + "..."
-
-        # Create priority indicator
-        priority_indicator = (
-            "🔴"
-            if priority in ["High", "Highest"]
-            else "🟡" if priority == "Medium" else "🟢"
-        )
-
-        # Create PR status indicators (single emoji per status)
-        pr_indicators = ""
-        if task.get("_has_pr"):
-            # Analyze reviews to determine status
-            reviews = task.get("_pr_reviews", [])
-            review_status = self._analyze_pr_reviews(reviews)
-
-            if review_status == "APPROVED":
-                pr_indicators += (
-                    "✅"  # Single green check emoji for all reviews approved
-                )
-            elif review_status == "CHANGES_REQUESTED":
-                pr_indicators += "❌"  # Single red X emoji for changes requested
-            elif review_status == "REVIEW_REQUIRED":
-                pr_indicators += "⏳"  # Single hourglass emoji for review required
-            else:  # NO_REVIEWS
-                pr_indicators += (
-                    "🚀"  # Rocket emoji for PR ready to launch but no reviews
-                )
-
-        # Create the minimal one-line output
-        # Place PR indicator immediately after the priority emoji.
-        # Use a fixed-width placeholder when there's no PR to keep titles aligned.
-        # Use two-space slot when no PR to align with emoji width on most terminals
-        pr_slot = pr_indicators if pr_indicators else "  "
-        output = f"{priority_indicator} {pr_slot} {key[:7]:<7} {summary}"
-
-        return output
 
     def open_task_in_browser(self, task: Dict):
         """Open a JIRA task in the default web browser."""
