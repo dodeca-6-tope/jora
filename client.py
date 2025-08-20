@@ -32,10 +32,6 @@ class JoraClient:
         self.jira_project_key = os.getenv("JIRA_PROJECT_KEY")
         
         # Validate configuration
-        self._validate_config()
-
-    def _validate_config(self) -> None:
-        """Validate that required configuration is present."""
         if not self.jira_url:
             raise ConfigException(
                 "Missing JIRA URL configuration. Please set JIRA_URL "
@@ -70,29 +66,7 @@ class JoraClient:
         except subprocess.CalledProcessError:
             return False
 
-    @staticmethod
-    def _check_git_status() -> bool:
-        """Check if there are uncommitted changes. Returns True if clean, False if dirty."""
-        try:
-            result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            return not result.stdout.strip()
-        except subprocess.CalledProcessError:
-            return False
 
-    def _validate_git_preconditions(self):
-        """Validate git repository state before operations."""
-        if not self.ensure_git_repo():
-            raise GitOperationsException("Not in a git repository")
-
-        if not self._check_git_status():
-            raise GitOperationsException(
-                "Please commit or stash changes before switching branches"
-            )
 
     @staticmethod
     def get_current_branch() -> str:
@@ -149,18 +123,7 @@ class JoraClient:
         except subprocess.CalledProcessError as e:
             raise GitOperationsException(f"Failed to stage and commit: {str(e)}")
 
-    @staticmethod
-    def _update_develop_branch() -> bool:
-        """Update the develop branch to latest. Returns True on success."""
-        try:
-            subprocess.run(["git", "fetch", "origin"], check=True)
-            subprocess.run(["git", "checkout", "develop"], check=True)
-            subprocess.run(["git", "pull", "origin", "develop"], check=True)
-            return True
-        except subprocess.CalledProcessError:
-            raise GitOperationsException(
-                "Could not update develop branch - ensure it exists"
-            )
+
 
     def checkout_task_branch(self, task_key: str, create_new: bool) -> bool:
         """Checkout the feature branch for the given task key; optionally create it if it doesn't exist.
@@ -171,7 +134,25 @@ class JoraClient:
             branch_name = self.get_feature_branch_name(task_key)
             
             # Validate repo and clean state before switching branches
-            self._validate_git_preconditions()
+            if not self.ensure_git_repo():
+                raise GitOperationsException("Not in a git repository")
+
+            # Check if there are uncommitted changes
+            try:
+                status_result = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                if status_result.stdout.strip():
+                    raise GitOperationsException(
+                        "Please commit or stash changes before switching branches"
+                    )
+            except subprocess.CalledProcessError:
+                raise GitOperationsException(
+                    "Please commit or stash changes before switching branches"
+                )
 
             # Try to checkout existing branch
             result = subprocess.run(
@@ -181,7 +162,14 @@ class JoraClient:
                 if create_new:
                     # Branch doesn't exist:
                     # 1) Update develop from origin/develop
-                    self._update_develop_branch()
+                    try:
+                        subprocess.run(["git", "fetch", "origin"], check=True)
+                        subprocess.run(["git", "checkout", "develop"], check=True)
+                        subprocess.run(["git", "pull", "origin", "develop"], check=True)
+                    except subprocess.CalledProcessError:
+                        raise GitOperationsException(
+                            "Could not update develop branch - ensure it exists"
+                        )
                     # 2) Create new branch from updated develop
                     subprocess.run(["git", "checkout", "-b", branch_name, "develop"], check=True)
                 else:
@@ -192,29 +180,7 @@ class JoraClient:
         except subprocess.CalledProcessError as e:
             raise GitOperationsException(f"Failed to checkout branch: {str(e)}")
 
-    @staticmethod
-    def _has_changes_from_branch(base_branch: str = "develop") -> bool:
-        """Check if current branch has changes compared to base branch. Returns True if there are changes."""
-        try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", base_branch],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            return bool(result.stdout.strip())
-        except subprocess.CalledProcessError as e:
-            raise GitOperationsException(f"Failed to check for changes: {str(e)}")
 
-    @staticmethod
-    def _push_branch_with_upstream(branch_name: str) -> None:
-        """Push branch to origin and set upstream tracking."""
-        try:
-            subprocess.run(
-                ["git", "push", "--set-upstream", "origin", branch_name], check=True
-            )
-        except subprocess.CalledProcessError as e:
-            raise GitOperationsException(f"Failed to push branch: {str(e)}")
 
     # ==================== GITHUB/PR OPERATIONS ====================
 
@@ -350,11 +316,25 @@ class JoraClient:
                 raise PRManagerException(str(e))
 
             # Check for changes to commit
-            if not self._has_changes_from_branch("develop"):
-                raise PRManagerException("No changes found to create a PR")
+            try:
+                diff_result = subprocess.run(
+                    ["git", "diff", "--name-only", "develop"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                if not diff_result.stdout.strip():
+                    raise PRManagerException("No changes found to create a PR")
+            except subprocess.CalledProcessError as e:
+                raise PRManagerException(f"Failed to check for changes: {str(e)}")
 
             # Push branch and create PR
-            self._push_branch_with_upstream(branch_name)
+            try:
+                subprocess.run(
+                    ["git", "push", "--set-upstream", "origin", branch_name], check=True
+                )
+            except subprocess.CalledProcessError as e:
+                raise PRManagerException(f"Failed to push branch: {str(e)}")
             
             subprocess.run(
                 ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
