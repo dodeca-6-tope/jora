@@ -2,8 +2,7 @@
 
 import argparse
 import sys
-from clients.jira import JiraAPI
-from clients.git import GitOperations
+from client import JoraClient
 from commands.commit import CommitCommand
 from commands.interactive import InteractiveCommand
 from exceptions import ConfigException
@@ -26,8 +25,7 @@ def main():
     
     # Initialize dependencies and validate configuration once
     try:
-        jira_api = JiraAPI()
-        git_ops = GitOperations()
+        client = JoraClient()
     except ConfigException as e:
         print(f"❌ Configuration Error: {str(e)}")
         sys.exit(1)
@@ -38,9 +36,9 @@ def main():
     # Create and execute appropriate command
     try:
         if args.commit_with_title:
-            command = CommitCommand(jira_api, git_ops)
+            command = CommitCommand(client)
         elif args.interactive:
-            command = InteractiveCommand(jira_api, git_ops)
+            command = InteractiveCommand(client)
         else:
             raise ValueError("No valid command found in arguments")
         

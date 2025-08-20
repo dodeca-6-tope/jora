@@ -7,7 +7,6 @@ import webbrowser
 from typing import Dict, List, Optional
 
 from .base import BaseCommand
-from clients.github import PRManager
 from keyboard_utils import KeyboardInput
 from exceptions import (
     JiraAPIException,
@@ -19,21 +18,19 @@ from exceptions import (
 class InteractiveCommand(BaseCommand):
     """Handle all user interface and interaction logic."""
 
-    def __init__(self, jira_api, git_ops):
+    def __init__(self, client):
         """Initialize command with required dependencies."""
-        self.jira_api = jira_api
-        self.git_ops = git_ops
-        self.pr_manager = PRManager()
+        self.client = client
 
     def execute(self):
         """Main UI session - handles initial task fetching and interactive display."""
         print(f"🔍 Fetching your incomplete JIRA tasks...")
-        print(f"   Max results: {self.jira_api.MAX_RESULTS}")
+        print(f"   Max results: {self.client.MAX_RESULTS}")
         print()
 
         # Fetch tasks
         try:
-            result = self.jira_api.fetch_my_incomplete_tasks()
+            result = self.client.fetch_my_incomplete_tasks()
             issues = result.get("issues", [])
             print(f"✅ Found {len(issues)} tasks (sorted by PR status)")
             print()
@@ -96,7 +93,7 @@ class InteractiveCommand(BaseCommand):
         """Interactive component selection with arrow key navigation. Returns None if cancelled."""
         try:
             # Get available components
-            available_components = self.jira_api.get_project_components(project_key)
+            available_components = self.client.get_project_components(project_key)
 
             if not available_components:
                 print(
@@ -200,7 +197,7 @@ class InteractiveCommand(BaseCommand):
         # Interactive component selection
         print(f"\n📋 Select components for this task...")
         component_names = self.select_components_interactive(
-            self.jira_api.get_project_name()
+            self.client.get_project_name()
         )
 
         # Check if component selection was cancelled
@@ -212,7 +209,7 @@ class InteractiveCommand(BaseCommand):
         self.clear_screen()
         self.print_header("📝 Create New Task - Final Review")
         print(f"Title: {task_title}")
-        print(f"Project: {self.jira_api.get_project_name()}")
+        print(f"Project: {self.client.get_project_name()}")
         if component_names:
             if len(component_names) == 1:
                 print(f"Component: {component_names[0]}")
@@ -225,7 +222,7 @@ class InteractiveCommand(BaseCommand):
         # Create the task with proper error handling
         try:
             print(f"\n🔄 Creating task...")
-            new_task = self.jira_api.create_task(task_title, component_names)
+            new_task = self.client.create_task(task_title, component_names)
             return new_task
         except JiraAPIException as e:
             print(f"❌ Failed to create task: {str(e)}")
@@ -253,14 +250,13 @@ class InteractiveCommand(BaseCommand):
         task_key = task.get("key", "Unknown")
 
         if action_type == "browser":
-            self.jira_api.open_task_in_browser(task)
+            self.client.open_task_in_browser(task)
             self.wait_for_continue()
         elif action_type == "switch_branch":
             try:
                 print("🔄 Checking out branch...")
-                branch_name = self.git_ops.get_feature_branch_name(task_key)
-
-                self.git_ops.checkout_branch(branch_name, create_new=True)
+                self.client.checkout_task_branch(task_key, create_new=True)
+                branch_name = self.client.get_feature_branch_name(task_key)
                 print(f"✅ Checked out '{branch_name}'")
                 print(f"\n🎉 Ready to work on {task_key}!")
                 # Exit the tool immediately after successful checkout (clean exit)
@@ -271,8 +267,7 @@ class InteractiveCommand(BaseCommand):
         elif action_type == "create_pr":
             try:
                 print("🔄 Creating pull request...")
-                branch_name = self.git_ops.get_feature_branch_name(task_key)
-                self.pr_manager.create_new_pr(branch_name, task)
+                branch_name = self.client.create_new_pr(task)
                 print(f"✅ PR created successfully on branch '{branch_name}'")
                 print(f"\n🎉 PR created for {task_key}!")
                 # Exit the tool immediately after successful PR creation (branch is created/switched)
@@ -294,9 +289,10 @@ class InteractiveCommand(BaseCommand):
     def checkout_selected_task_branch(self, task: Dict) -> bool:
         """Handle checkout of selected task's feature branch and return success status."""
         try:
+            task_key = task.get("key", "Unknown")
             print(f"\n🔄 Checking out branch for {task_key}...")
-            branch_name = self.git_ops.get_feature_branch_name(task_key)
-            self.git_ops.checkout_branch(branch_name, create_new=True)
+            self.client.checkout_task_branch(task_key, create_new=True)
+            branch_name = self.client.get_feature_branch_name(task_key)
             print(f"✅ Checked out '{branch_name}'")
             print(f"\n🎉 Ready to work on {task_key}!")
             
@@ -390,7 +386,7 @@ class InteractiveCommand(BaseCommand):
 
                 # Display tasks with selection indicator
                 formatted_tasks = [
-                    self.jira_api.format_task_output(task)
+                    self.client.format_task_output(task)
                     for task in issues
                 ]
                 self.display_menu_items(formatted_tasks, selected_index)
@@ -431,7 +427,7 @@ class InteractiveCommand(BaseCommand):
                     # Refresh task list and PR information
                     print("\n🔄 Refreshing task list and PR information...")
                     try:
-                        result = self.jira_api.fetch_my_incomplete_tasks()
+                        result = self.client.fetch_my_incomplete_tasks()
                         issues[:] = result.get("issues", [])  # Update the list in place
                         selected_index = 0  # Reset selection to top
                         print("✅ Task list and PR information refreshed!")
