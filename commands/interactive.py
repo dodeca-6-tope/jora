@@ -250,7 +250,11 @@ class InteractiveCommand(BaseCommand):
         task_key = task.get("key", "Unknown")
 
         if action_type == "browser":
-            self.client.open_task_in_browser(task)
+            try:
+                print(f"\n🌐 Opening {task_key} in browser...")
+                self.client.open_task_in_browser(task_key)
+            except Exception as e:
+                print(f"\n❌ Failed to open browser: {str(e)}")
             self.wait_for_continue()
         elif action_type == "switch_branch":
             try:

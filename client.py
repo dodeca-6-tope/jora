@@ -393,17 +393,12 @@ class JoraClient:
 
 
 
-    def open_task_in_browser(self, task: Dict):
+    def open_task_in_browser(self, task_key: str):
         """Open a JIRA task in the default web browser."""
-        key = task.get("key", "")
-        if key:
-            task_url = f"{self.jira_url.rstrip('/')}/browse/{key}"
-            try:
-                webbrowser.open(task_url)
-                print(f"\n🌐 Opening {key} in browser...")
-            except Exception as e:
-                print(f"\n❌ Failed to open browser: {str(e)}")
-                print(f"   Manual URL: {task_url}")
+        if not task_key:
+            raise JiraAPIException("No task key found")
+            
+        webbrowser.open(f"{self.jira_url.rstrip('/')}/browse/{task_key}")
 
     def get_project_name(self) -> str:
         """Get the project key for display purposes."""
