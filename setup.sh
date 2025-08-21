@@ -83,8 +83,11 @@ cat > "$EXECUTABLE_SCRIPT" << EOF
 INSTALL_DIR="$INSTALL_DIR"
 VENV_DIR="\$INSTALL_DIR/.venv"
 
-# Current working directory (where project config should be)
+# Current working directory (for execution context)
 WORKING_DIR="\$(pwd)"
+
+# Get git repository root directory (where project config should be)
+PROJECT_ROOT="\$(git rev-parse --show-toplevel 2>/dev/null || echo "\$WORKING_DIR")"
 
 # Check if virtual environment exists
 if [ ! -d "\$VENV_DIR" ]; then
@@ -93,11 +96,11 @@ if [ ! -d "\$VENV_DIR" ]; then
     exit 1
 fi
 
-# Check if .env file exists in current directory
-if [ ! -f "\$WORKING_DIR/.env" ]; then
-    echo "❌ No .env file found in current directory: \$WORKING_DIR"
+# Check if .env file exists in project root directory
+if [ ! -f "\$PROJECT_ROOT/.env" ]; then
+    echo "❌ No .env file found in project root directory: \$PROJECT_ROOT"
     echo "📝 Creating template .env file..."
-    cat > "\$WORKING_DIR/.env" << 'ENVEOF'
+    cat > "\$PROJECT_ROOT/.env" << 'ENVEOF'
 # JIRA Configuration
 # Get your API key from: https://id.atlassian.com/manage-profile/security/api-tokens
 JIRA_URL=https://yourcompany.atlassian.net
@@ -105,7 +108,7 @@ JIRA_EMAIL=your.email@company.com
 JIRA_API_KEY=your_jira_api_key_here
 JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
 ENVEOF
-    echo "✅ Created .env template at \$WORKING_DIR/.env"
+    echo "✅ Created .env template at \$PROJECT_ROOT/.env"
     echo "⚠️  Please edit this file and add your JIRA credentials before running again"
     exit 1
 fi
@@ -199,12 +202,12 @@ fi
 
 echo
 echo -e "${BLUE}Next steps:${NC}"
-echo -e "1. Navigate to any project directory where you want to use Jora"
-echo -e "2. Run ${YELLOW}jora${NC} - it will create a .env template file"
+echo -e "1. Navigate to any git repository where you want to use Jora"
+echo -e "2. Run ${YELLOW}jora${NC} - it will create a .env template file in the repository root"
 echo -e "3. Edit the .env file with your JIRA credentials"
 echo -e "4. Run ${YELLOW}jora${NC} again to start using the tool"
 echo
-echo -e "${BLUE}Usage examples (from any project directory):${NC}"
+echo -e "${BLUE}Usage examples (from anywhere within a git repository):${NC}"
 echo -e "  ${YELLOW}jora${NC}                    - Start interactive task manager"
 echo
-echo -e "${BLUE}Each project directory will have its own .env file with project-specific settings.${NC}"
+echo -e "${BLUE}Each git repository will have its own .env file in the repository root with project-specific settings.${NC}"

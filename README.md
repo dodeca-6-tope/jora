@@ -11,8 +11,8 @@ git clone <repo> jora && cd jora && ./setup.sh
 # Add to PATH
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 
-# Setup (creates .env file)
-cd your-project && jora
+# Setup (creates .env file in repository root)
+cd your-git-repository && jora
 ```
 
 **Edit `.env`:**
@@ -29,7 +29,7 @@ JIRA_PROJECT_KEY=PROJ
 **Finish setup:**
 
 ```bash
-# Don't commit secrets
+# Don't commit secrets (add to repository root .gitignore)
 echo ".env" >> .gitignore
 
 # For PR features (optional)

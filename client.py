@@ -28,9 +28,9 @@ class JoraClient:
     CACHE_TTL_SECONDS = 86400  # 1 day (24 * 60 * 60)
 
     def __init__(self):
-        # Load environment variables from current working directory
-        current_dir = Path.cwd()
-        load_dotenv(current_dir / ".env")
+        # Load environment variables from project root directory
+        project_root = self.get_git_root()
+        load_dotenv(project_root / ".env")
 
         self.jira_url = os.getenv("JIRA_URL")
         self.jira_email = os.getenv("JIRA_EMAIL")
@@ -38,7 +38,7 @@ class JoraClient:
         self.jira_project_key = os.getenv("JIRA_PROJECT_KEY")
         
         # Initialize cache
-        cache_dir = Path.cwd() / ".cache"
+        cache_dir = project_root / ".cache"
         self.cache = dc.Cache(str(cache_dir))
         
         # Validate configuration
@@ -73,6 +73,21 @@ class JoraClient:
             return True
         except subprocess.CalledProcessError:
             return False
+
+    @staticmethod
+    def get_git_root() -> Path:
+        """Get the root directory of the current git repository."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return Path(result.stdout.strip())
+        except subprocess.CalledProcessError:
+            # If not in a git repo, fall back to current directory
+            return Path.cwd()
 
 
 
