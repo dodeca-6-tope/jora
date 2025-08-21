@@ -6,6 +6,7 @@ from client import JoraClient
 from commands.commit import CommitCommand
 from commands.interactive import InteractiveCommand
 from commands.pr import PRCommand
+from commands.task_summary import TaskSummaryCommand
 from exceptions import ConfigException
 
 
@@ -18,6 +19,8 @@ def main():
                        help="Run the interactive Jora task manager")
     parser.add_argument("-p", "--create-pr", action="store_true", 
                        help="Create a pull request for the task associated with the current branch")
+    parser.add_argument("-t", "--task-summary", action="store_true", 
+                       help="Display the title of the task associated with the current branch")
     
     args = parser.parse_args()
     
@@ -44,6 +47,8 @@ def main():
             command = InteractiveCommand(client)
         elif args.create_pr:
             command = PRCommand(client)
+        elif args.task_summary:
+            command = TaskSummaryCommand(client)
         else:
             raise ValueError("No valid command found in arguments")
         
