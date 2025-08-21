@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import diskcache as dc
 import humanize
 
-from exceptions import GitOperationsException, PRManagerException, JiraAPIException, ConfigException
+from exceptions import ClientException
 
 
 class JoraClient:
@@ -43,19 +43,19 @@ class JoraClient:
         
         # Validate configuration
         if not self.jira_url:
-            raise ConfigException(
+            raise ClientException(
                 "Missing JIRA URL configuration. Please set JIRA_URL "
                 "environment variable (e.g., https://yourcompany.atlassian.net)."
             )
 
         if not self.jira_email or not self.jira_api_key:
-            raise ConfigException(
+            raise ClientException(
                 "Missing required JIRA configuration. Please set JIRA_EMAIL and "
                 "JIRA_API_KEY environment variables."
             )
 
         if not self.jira_project_key:
-            raise ConfigException(
+            raise ClientException(
                 "Missing JIRA project configuration. Please set JIRA_PROJECT_KEY "
                 "environment variable."
             )
@@ -88,7 +88,7 @@ class JoraClient:
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            raise GitOperationsException(f"Failed to get current branch: {str(e)}")
+            raise ClientException(f"Failed to get current branch: {str(e)}")
 
     @staticmethod
     def extract_task_key_from_branch(branch_name: str) -> str:
@@ -109,7 +109,7 @@ class JoraClient:
         try:
             # Check if we're in a git repository
             if not JoraClient.ensure_git_repo():
-                raise GitOperationsException("Not in a git repository")
+                raise ClientException("Not in a git repository")
             
             # Stage all changes
             subprocess.run(["git", "add", "."], check=True)
@@ -123,13 +123,13 @@ class JoraClient:
             )
             
             if not result.stdout.strip():
-                raise GitOperationsException("No changes to commit")
+                raise ClientException("No changes to commit")
             
             # Commit the changes
             subprocess.run(["git", "commit", "-m", commit_message], check=True)
             
         except subprocess.CalledProcessError as e:
-            raise GitOperationsException(f"Failed to stage and commit: {str(e)}")
+            raise ClientException(f"Failed to stage and commit: {str(e)}")
 
 
 
@@ -143,7 +143,7 @@ class JoraClient:
             
             # Validate repo and clean state before switching branches
             if not self.ensure_git_repo():
-                raise GitOperationsException("Not in a git repository")
+                raise ClientException("Not in a git repository")
 
             # Check if there are uncommitted changes
             try:
@@ -154,11 +154,11 @@ class JoraClient:
                     check=True,
                 )
                 if status_result.stdout.strip():
-                    raise GitOperationsException(
+                    raise ClientException(
                         "Please commit or stash changes before switching branches"
                     )
             except subprocess.CalledProcessError:
-                raise GitOperationsException(
+                raise ClientException(
                     "Please commit or stash changes before switching branches"
                 )
 
@@ -175,18 +175,18 @@ class JoraClient:
                         subprocess.run(["git", "checkout", "develop"], check=True)
                         subprocess.run(["git", "pull", "origin", "develop"], check=True)
                     except subprocess.CalledProcessError:
-                        raise GitOperationsException(
+                        raise ClientException(
                             "Could not update develop branch - ensure it exists"
                         )
                     # 2) Create new branch from updated develop
                     subprocess.run(["git", "checkout", "-b", branch_name, "develop"], check=True)
                 else:
                     # Branch doesn't exist and we're not allowed to create it
-                    raise GitOperationsException("Branch does not exist - no changes to create PR from")
+                    raise ClientException("Branch does not exist - no changes to create PR from")
 
             return True
         except subprocess.CalledProcessError as e:
-            raise GitOperationsException(f"Failed to checkout branch: {str(e)}")
+            raise ClientException(f"Failed to checkout branch: {str(e)}")
 
 
 
@@ -302,7 +302,7 @@ class JoraClient:
         task_key = task.get("key", "Unknown")
 
         if not task_key:
-            raise PRManagerException("No task key found")
+            raise ClientException("No task key found")
 
         # Compute branch name from task key
         branch_name = self.get_feature_branch_name(task_key)
@@ -313,13 +313,13 @@ class JoraClient:
         try:
             # Ensure we're in a git repository
             if not self.ensure_git_repo():
-                raise PRManagerException("Not in a git repository")
+                raise ClientException("Not in a git repository")
 
             # Switch to existing feature branch (don't create new as it would have no changes)
             try:
                 self.checkout_task_branch(task_key, create_new=False)
-            except GitOperationsException as e:
-                raise PRManagerException(str(e))
+            except ClientException as e:
+                raise ClientException(str(e))
 
             # Check for changes to commit
             try:
@@ -330,9 +330,9 @@ class JoraClient:
                     check=True,
                 )
                 if not diff_result.stdout.strip():
-                    raise PRManagerException("No changes found to create a PR")
+                    raise ClientException("No changes found to create a PR")
             except subprocess.CalledProcessError as e:
-                raise PRManagerException(f"Failed to check for changes: {str(e)}")
+                raise ClientException(f"Failed to check for changes: {str(e)}")
 
             # Push branch and create PR
             try:
@@ -340,7 +340,7 @@ class JoraClient:
                     ["git", "push", "--set-upstream", "origin", branch_name], check=True
                 )
             except subprocess.CalledProcessError as e:
-                raise PRManagerException(f"Failed to push branch: {str(e)}")
+                raise ClientException(f"Failed to push branch: {str(e)}")
             
             subprocess.run(
                 ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
@@ -350,9 +350,9 @@ class JoraClient:
             return branch_name
 
         except subprocess.CalledProcessError as e:
-            raise PRManagerException(f"Failed to create PR: {str(e)}")
+            raise ClientException(f"Failed to create PR: {str(e)}")
         except Exception as e:
-            raise PRManagerException(f"Failed to create PR: {str(e)}")
+            raise ClientException(f"Failed to create PR: {str(e)}")
 
     def commit_current_task(self) -> str:
         """
@@ -362,15 +362,14 @@ class JoraClient:
             str: The commit message used (task title)
             
         Raises:
-            GitOperationsException: If git operations fail
-            JiraAPIException: If JIRA API calls fail
+            ClientException: If git operations fail or JIRA API calls fail
         """
         # Get current branch and extract task key
         current_branch = self.get_current_branch()
         task_key = self.extract_task_key_from_branch(current_branch)
         
         if not task_key:
-            raise GitOperationsException(
+            raise ClientException(
                 f"Current branch '{current_branch}' does not follow the expected pattern (feature/TASK-KEY)"
             )
         
@@ -394,7 +393,7 @@ class JoraClient:
             str: The branch name that was checked out
             
         Raises:
-            GitOperationsException: If git operations fail
+            ClientException: If git operations fail
         """
         self.checkout_task_branch(task_key, create_new=True)
         return self.get_feature_branch_name(task_key)
@@ -406,7 +405,7 @@ class JoraClient:
     def open_task_in_browser(self, task_key: str):
         """Open a JIRA task in the default web browser."""
         if not task_key:
-            raise JiraAPIException("No task key found")
+            raise ClientException("No task key found")
             
         webbrowser.open(f"{self.jira_url.rstrip('/')}/browse/{task_key}")
 
@@ -444,16 +443,16 @@ class JoraClient:
 
             users = response.json()
             if not users:
-                raise JiraAPIException(f"No user found with email: {email}")
+                raise ClientException(f"No user found with email: {email}")
 
             account_id = users[0].get("accountId")
             if not account_id:
-                raise JiraAPIException(f"Account ID not found for user: {email}")
+                raise ClientException(f"Account ID not found for user: {email}")
 
             return account_id
 
         except requests.exceptions.RequestException as e:
-            raise JiraAPIException(f"Failed to get account ID: {str(e)}")
+            raise ClientException(f"Failed to get account ID: {str(e)}")
 
     def get_project_components(self, project_key: str) -> List[str]:
         """Get all available components for the specified project."""
@@ -469,7 +468,7 @@ class JoraClient:
             return [comp.get("name", "") for comp in components if comp.get("name")]
 
         except Exception as e:
-            raise JiraAPIException(f"Failed to fetch components: {str(e)}")
+            raise ClientException(f"Failed to fetch components: {str(e)}")
 
     def create_task(self, task_title: str, component_names: List[str]) -> Dict:
         """Create a new JIRA task with user input."""
@@ -522,10 +521,10 @@ class JoraClient:
                     error_msg += (
                         f" (Component issue with: '{', '.join(component_names)}')"
                     )
-                raise JiraAPIException(error_msg)
+                raise ClientException(error_msg)
 
         except requests.exceptions.RequestException as e:
-            raise JiraAPIException(f"Failed to create JIRA task: {str(e)}")
+            raise ClientException(f"Failed to create JIRA task: {str(e)}")
 
     def _fetch_jira_tasks_only(self) -> Dict:
         """
@@ -612,7 +611,7 @@ class JoraClient:
             return response.json()
 
         except requests.exceptions.RequestException as e:
-            raise JiraAPIException(f"Failed to fetch task {task_key}: {str(e)}")
+            raise ClientException(f"Failed to fetch task {task_key}: {str(e)}")
 
     def get_cache_timestamp_formatted(self) -> Optional[str]:
         """Get the cache timestamp in a user-friendly format."""
@@ -664,7 +663,7 @@ class JoraClient:
                 try:
                     jira_results = jira_future.result(timeout=35)  # JIRA has 30s timeout + buffer
                 except Exception as e:
-                    raise JiraAPIException(f"Failed to fetch JIRA tasks: {str(e)}")
+                    raise ClientException(f"Failed to fetch JIRA tasks: {str(e)}")
                 
                 try:
                     all_prs = pr_future.result(timeout=15)  # PR fetch timeout + buffer
@@ -698,4 +697,4 @@ class JoraClient:
             return jira_results
 
         except requests.exceptions.RequestException as e:
-            raise JiraAPIException(f"Failed to fetch JIRA tasks: {str(e)}")
+            raise ClientException(f"Failed to fetch JIRA tasks: {str(e)}")

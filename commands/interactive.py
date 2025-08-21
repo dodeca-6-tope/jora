@@ -9,9 +9,7 @@ from typing import Dict, List, Optional
 from .base import BaseCommand
 from keyboard_utils import KeyboardInput
 from exceptions import (
-    JiraAPIException,
-    PRManagerException,
-    GitOperationsException,
+    ClientException,
 )
 
 
@@ -32,11 +30,8 @@ class InteractiveCommand(BaseCommand):
         try:
             result = self.client.fetch_my_incomplete_tasks()
             issues = result.get("issues", [])
-        except JiraAPIException as e:
-            print(f"❌ JIRA API Error: {str(e)}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ Unexpected Error during task fetching: {str(e)}")
+        except ClientException as e:
+            print(f"❌ Client Error: {str(e)}")
             sys.exit(1)
 
         # Display interactive interface
@@ -98,7 +93,7 @@ class InteractiveCommand(BaseCommand):
                     "❌ No components found in this project or unable to fetch components."
                 )
                 return []
-        except JiraAPIException as e:
+        except ClientException as e:
             print(f"❌ Failed to fetch components: {str(e)}")
             return []
 
@@ -222,7 +217,7 @@ class InteractiveCommand(BaseCommand):
             print(f"\n🔄 Creating task...")
             new_task = self.client.create_task(task_title, component_names)
             return new_task
-        except JiraAPIException as e:
+        except ClientException as e:
             print(f"❌ Failed to create task: {str(e)}")
             return None
 
@@ -257,7 +252,7 @@ class InteractiveCommand(BaseCommand):
                 print(f"\n🎉 Ready to work on {task_key}!")
                 # Exit the tool immediately after successful checkout (clean exit)
                 sys.exit(0)
-            except GitOperationsException as e:
+            except ClientException as e:
                 print(f"❌ Failed to checkout branch: {str(e)}")
                 self.wait_for_continue()
         elif action_type == "create_pr":
@@ -268,7 +263,7 @@ class InteractiveCommand(BaseCommand):
                 print(f"\n🎉 PR created for {task_key}!")
                 # Exit the tool immediately after successful PR creation (branch is created/switched)
                 sys.exit(0)
-            except PRManagerException as e:
+            except ClientException as e:
                 print(f"❌ Failed to create PR: {str(e)}")
             self.wait_for_continue()
         elif action_type == "open_pr":
@@ -352,11 +347,8 @@ class InteractiveCommand(BaseCommand):
             # Return True to indicate successful checkout and exit
             return True
             
-        except GitOperationsException as e:
+        except ClientException as e:
             print(f"❌ Failed to checkout branch: {str(e)}")
-            return False
-        except Exception as e:
-            print(f"❌ Unexpected error: {str(e)}")
             return False
 
     def show_task_action_menu(self, task: Dict) -> None:
@@ -492,7 +484,7 @@ class InteractiveCommand(BaseCommand):
                         print("✅ Task list and PR information refreshed!")
                         # Small delay to show the success message before refreshing UI
                         time.sleep(0.5)
-                    except JiraAPIException as e:
+                    except ClientException as e:
                         print(f"❌ Error refreshing task list: {str(e)}")
                         self.wait_for_continue()
                 elif key == "c":

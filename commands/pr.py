@@ -2,7 +2,7 @@
 
 import sys
 from .base import BaseCommand
-from exceptions import JiraAPIException, GitOperationsException, PRManagerException
+from exceptions import ClientException
 
 
 class PRCommand(BaseCommand):
@@ -44,15 +44,6 @@ class PRCommand(BaseCommand):
             print(f"✅ PR created successfully for {task_key}")
             print(f"🎉 Branch: {branch_name}")
             
-        except GitOperationsException as e:
-            print(f"❌ Git Error: {str(e)}")
-            sys.exit(1)
-        except JiraAPIException as e:
-            print(f"❌ JIRA API Error: {str(e)}")
-            sys.exit(1)
-        except PRManagerException as e:
-            print(f"❌ PR Creation Error: {str(e)}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ Unexpected Error: {str(e)}")
+        except ClientException as e:
+            print(f"❌ Client Error: {str(e)}")
             sys.exit(1)

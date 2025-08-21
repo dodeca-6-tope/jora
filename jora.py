@@ -7,7 +7,7 @@ from commands.commit import CommitCommand
 from commands.interactive import InteractiveCommand
 from commands.pr import PRCommand
 from commands.task_summary import TaskSummaryCommand
-from exceptions import ConfigException
+from exceptions import ClientException
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
     # Initialize dependencies and validate configuration once
     try:
         client = JoraClient()
-    except ConfigException as e:
+    except ClientException as e:
         print(f"❌ Configuration Error: {str(e)}")
         sys.exit(1)
     except Exception as e:
