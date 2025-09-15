@@ -439,7 +439,7 @@ class JoraClient:
             str: The account ID for the user
         """
         # Prepare the API endpoint for user search
-        url = f"{self.jira_url.rstrip('/')}/rest/api/2/user/search"
+        url = f"{self.jira_url.rstrip('/')}/rest/api/3/user/search"
 
         # Prepare authentication
         auth = (self.jira_email, self.jira_api_key)
@@ -472,7 +472,7 @@ class JoraClient:
     def get_project_components(self, project_key: str) -> List[str]:
         """Get all available components for the specified project."""
         try:
-            url = f"{self.jira_url.rstrip('/')}/rest/api/2/project/{project_key}/components"
+            url = f"{self.jira_url.rstrip('/')}/rest/api/3/project/{project_key}/components"
             auth = (self.jira_email, self.jira_api_key)
             headers = {"Accept": "application/json"}
 
@@ -488,7 +488,7 @@ class JoraClient:
     def create_task(self, task_title: str, component_names: List[str]) -> Dict:
         """Create a new JIRA task with user input."""
         # Prepare the API endpoint for creating issues
-        url = f"{self.jira_url.rstrip('/')}/rest/api/2/issue"
+        url = f"{self.jira_url.rstrip('/')}/rest/api/3/issue"
 
         # Prepare authentication
         auth = (self.jira_email, self.jira_api_key)
@@ -504,7 +504,21 @@ class JoraClient:
             "fields": {
                 "project": {"key": self.jira_project_key},
                 "summary": task_title,
-                "description": f"Task created via Jora script",
+                "description": {
+                    "version": 1,
+                    "type": "doc",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Task created via Jora script"
+                                }
+                            ]
+                        }
+                    ]
+                },
                 "issuetype": {"name": "Task"},  # Default issue type
                 "assignee": {"accountId": account_id},
             }
@@ -551,8 +565,8 @@ class JoraClient:
         # Get account ID for the search
         account_id = self._get_account_id_by_email(self.jira_email)
 
-        # Prepare the API endpoint for search
-        url = f"{self.jira_url.rstrip('/')}/rest/api/2/search"
+        # Prepare the API endpoint for search (v3)
+        url = f"{self.jira_url.rstrip('/')}/rest/api/3/search/jql"
 
         # Prepare authentication
         auth = (self.jira_email, self.jira_api_key)
@@ -568,20 +582,21 @@ class JoraClient:
 
         jql = f'assignee = "{account_id}" AND {status_exclusion} ORDER BY updated DESC'
 
-        # Prepare the search data
-        search_data = {
+        # Prepare query parameters for v3 GET request
+        params = {
             "jql": jql,
             "maxResults": self.MAX_RESULTS,
-            "fields": ["summary", "status", "priority"],
-            "expand": ["changelog"],  # This might contain development info
+            "fields": "key,summary,status,priority",
+            "startAt": 0,
+            "expand": "changelog"
         }
 
-        # Make the API request
-        response = requests.post(
+        # Make the API request using GET instead of POST for v3
+        response = requests.get(
             url,
             auth=auth,
             headers=headers,
-            data=json.dumps(search_data),
+            params=params,
             timeout=30,
         )
 
@@ -602,7 +617,7 @@ class JoraClient:
             dict: JIRA task data
         """
         # Prepare the API endpoint for getting an issue
-        url = f"{self.jira_url.rstrip('/')}/rest/api/2/issue/{task_key}"
+        url = f"{self.jira_url.rstrip('/')}/rest/api/3/issue/{task_key}"
 
         # Prepare authentication
         auth = (self.jira_email, self.jira_api_key)
