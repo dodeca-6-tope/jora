@@ -391,11 +391,12 @@ class JoraClient:
         # Fetch task details from JIRA
         task = self.get_task_by_key(task_key)
         task_title = task.get("fields", {}).get("summary", "No title available")
+        commit_message = task_title.lower()
         
         # Stage all changes and commit with task title
-        self.stage_and_commit_with_title(task_title)
+        self.stage_and_commit_with_title(commit_message)
         
-        return task_title
+        return commit_message
 
     def switch_to_task_branch(self, task_key: str) -> str:
         """
