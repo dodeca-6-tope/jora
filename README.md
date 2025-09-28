@@ -2,6 +2,8 @@
 
 **TL;DR**: Manage JIRA tasks from terminal. Think in tasks, not branches.
 
+> ⚠️ **Disclaimer**: This entire project was vibe-coded.
+
 ## Quick Start
 
 ```bash
