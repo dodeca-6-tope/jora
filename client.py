@@ -19,11 +19,11 @@ from exceptions import ClientException
 
 class JoraClient:
     """Unified client for all JIRA, Git, and GitHub operations."""
-    
+
     # JIRA-specific configuration
     MAX_RESULTS = 50
     EXCLUDED_STATUSES = ["Done", "Resolved", "Closed", "Cancelled"]
-    
+
     # Cache configuration
     CACHE_TTL_SECONDS = 86400  # 1 day (24 * 60 * 60)
 
@@ -36,11 +36,11 @@ class JoraClient:
         self.jira_email = os.getenv("JIRA_EMAIL")
         self.jira_api_key = os.getenv("JIRA_API_KEY")
         self.jira_project_key = os.getenv("JIRA_PROJECT_KEY")
-        
+
         # Initialize cache
         cache_dir = project_root / ".cache"
         self.cache = dc.Cache(str(cache_dir))
-        
+
         # Validate configuration
         if not self.jira_url:
             raise ClientException(
@@ -75,6 +75,20 @@ class JoraClient:
             return False
 
     @staticmethod
+    def has_uncommitted_changes() -> bool:
+        """Check if there are any uncommitted changes in the working directory."""
+        try:
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return bool(status_result.stdout.strip())
+        except subprocess.CalledProcessError:
+            return False
+
+    @staticmethod
     def get_git_root() -> Path:
         """Get the root directory of the current git repository."""
         try:
@@ -88,8 +102,6 @@ class JoraClient:
         except subprocess.CalledProcessError:
             # If not in a git repo, fall back to current directory
             return Path.cwd()
-
-
 
     @staticmethod
     def get_current_branch() -> str:
@@ -105,6 +117,26 @@ class JoraClient:
         except subprocess.CalledProcessError as e:
             raise ClientException(f"Failed to get current branch: {str(e)}")
 
+    def get_current_task_key(self) -> str:
+        """
+        Get the task key from the current branch.
+
+        Returns:
+            str: The task key extracted from the current branch
+
+        Raises:
+            ClientException: If not on a valid feature branch
+        """
+        current_branch = self.get_current_branch()
+        task_key = self.extract_task_key_from_branch(current_branch)
+
+        if not task_key:
+            raise ClientException(
+                f"Current branch '{current_branch}' does not follow the expected pattern (feature/TASK-KEY)"
+            )
+
+        return task_key
+
     @staticmethod
     def extract_task_key_from_branch(branch_name: str) -> str:
         """Extract task key from feature branch name. Returns empty string if not a feature branch."""
@@ -119,16 +151,114 @@ class JoraClient:
         return f"feature/{task_key.lower()}"
 
     @staticmethod
+    def get_all_task_commits() -> str:
+        """Get list of all commits for the current task branch (compared to origin/develop)."""
+        try:
+            result = subprocess.run(
+                ["git", "log", "--oneline", "origin/develop..HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return ""
+
+    @staticmethod
+    def get_all_task_changes() -> str:
+        """Get diff of all changes in the current task branch compared to origin/develop."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "origin/develop...HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return ""
+
+    @staticmethod
+    def get_diff_stats() -> dict:
+        """Get statistics about changes in the current task branch compared to origin/develop.
+
+        Returns:
+            dict: Contains files_changed, insertions, deletions, and file_list
+        """
+        try:
+            # Get shortstat for summary numbers
+            shortstat_result = subprocess.run(
+                ["git", "diff", "--shortstat", "origin/develop...HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Get file list with their changes
+            numstat_result = subprocess.run(
+                ["git", "diff", "--numstat", "origin/develop...HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Parse shortstat (format: "X files changed, Y insertions(+), Z deletions(-)")
+            stats = {
+                "files_changed": 0,
+                "insertions": 0,
+                "deletions": 0,
+                "file_list": [],
+            }
+
+            shortstat = shortstat_result.stdout.strip()
+            if shortstat:
+                parts = shortstat.split(", ")
+                for part in parts:
+                    if "file" in part:
+                        stats["files_changed"] = int(part.split()[0])
+                    elif "insertion" in part:
+                        stats["insertions"] = int(part.split()[0])
+                    elif "deletion" in part:
+                        stats["deletions"] = int(part.split()[0])
+
+            # Parse numstat for per-file statistics
+            numstat = numstat_result.stdout.strip()
+            if numstat:
+                for line in numstat.split("\n"):
+                    if line:
+                        parts = line.split("\t")
+                        if len(parts) >= 3:
+                            added = parts[0] if parts[0] != "-" else "0"
+                            removed = parts[1] if parts[1] != "-" else "0"
+                            filename = parts[2]
+                            stats["file_list"].append(
+                                {
+                                    "file": filename,
+                                    "added": int(added) if added.isdigit() else 0,
+                                    "removed": int(removed) if removed.isdigit() else 0,
+                                }
+                            )
+
+            return stats
+        except subprocess.CalledProcessError:
+            return {
+                "files_changed": 0,
+                "insertions": 0,
+                "deletions": 0,
+                "file_list": [],
+            }
+
+    @staticmethod
     def stage_and_commit_with_title(commit_message: str) -> None:
         """Stage all changes and commit with the given task title."""
         try:
             # Check if we're in a git repository
             if not JoraClient.ensure_git_repo():
                 raise ClientException("Not in a git repository")
-            
+
             # Stage all changes
             subprocess.run(["git", "add", "."], check=True)
-            
+
             # Check if there are any staged changes
             result = subprocess.run(
                 ["git", "diff", "--cached", "--name-only"],
@@ -136,26 +266,24 @@ class JoraClient:
                 text=True,
                 check=True,
             )
-            
+
             if not result.stdout.strip():
                 raise ClientException("No changes to commit")
-            
+
             # Commit the changes
             subprocess.run(["git", "commit", "-m", commit_message], check=True)
-            
+
         except subprocess.CalledProcessError as e:
             raise ClientException(f"Failed to stage and commit: {str(e)}")
 
-
-
     def checkout_task_branch(self, task_key: str, create_new: bool) -> bool:
         """Checkout the feature branch for the given task key; optionally create it if it doesn't exist.
-        If create_new is True and branch doesn't exist, updates local develop from origin/develop 
+        If create_new is True and branch doesn't exist, updates local develop from origin/develop
         and creates the branch from develop. Does not perform any rebase operations."""
         try:
             # Compute branch name from task key
             branch_name = self.get_feature_branch_name(task_key)
-            
+
             # Validate repo and clean state before switching branches
             if not self.ensure_git_repo():
                 raise ClientException("Not in a git repository")
@@ -194,16 +322,37 @@ class JoraClient:
                             "Could not update develop branch - ensure it exists"
                         )
                     # 2) Create new branch from updated develop
-                    subprocess.run(["git", "checkout", "-b", branch_name, "develop"], check=True)
+                    subprocess.run(
+                        ["git", "checkout", "-b", branch_name, "develop"], check=True
+                    )
                 else:
                     # Branch doesn't exist and we're not allowed to create it
-                    raise ClientException("Branch does not exist - no changes to create PR from")
+                    raise ClientException(
+                        "Branch does not exist - no changes to create PR from"
+                    )
 
             return True
         except subprocess.CalledProcessError as e:
             raise ClientException(f"Failed to checkout branch: {str(e)}")
 
+    @staticmethod
+    def check_pr_exists() -> bool:
+        """Check if a PR exists for the current branch.
 
+        Returns:
+            bool: True if a PR exists for the current branch, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", "--json", "number"],
+                capture_output=True,
+                text=True,
+                check=False,  # Don't raise exception on non-zero exit code
+            )
+            # If the command succeeds and returns JSON, a PR exists
+            return result.returncode == 0 and result.stdout.strip() != ""
+        except Exception:
+            return False
 
     def _fetch_all_prs(self) -> List[Dict]:
         """Fetch all open PRs once for caching. Returns list of PR objects with approval status."""
@@ -230,9 +379,7 @@ class JoraClient:
         except (subprocess.SubprocessError, json.JSONDecodeError, OSError):
             return []  # Return empty list if any error occurs
 
-    def _find_pr_by_content(
-        self, content: str, all_prs: List[Dict]
-    ) -> Optional[Dict]:
+    def _find_pr_by_content(self, content: str, all_prs: List[Dict]) -> Optional[Dict]:
         """Find an existing PR that contains the given content from a list of PRs. Returns PR info dict if found, None otherwise."""
         if not content:
             return None
@@ -324,7 +471,7 @@ class JoraClient:
 
         pr_title = f"[{task_key}] {task.get("fields", {}).get("summary", "No summary")}"
         pr_body = f"[{task_key}]\n\n---\n*Created by [Jora](https://github.com/dodeca-6-tope/jora)*"
-        
+
         try:
             # Ensure we're in a git repository
             if not self.ensure_git_repo():
@@ -339,7 +486,7 @@ class JoraClient:
             # Check for changes to commit
             try:
                 diff_result = subprocess.run(
-                    ["git", "diff", "--name-only", "develop"],
+                    ["git", "diff", "--name-only", "origin/develop"],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -356,7 +503,7 @@ class JoraClient:
                 )
             except subprocess.CalledProcessError as e:
                 raise ClientException(f"Failed to push branch: {str(e)}")
-            
+
             subprocess.run(
                 ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
                 check=True,
@@ -372,57 +519,53 @@ class JoraClient:
     def commit_current_task(self) -> str:
         """
         Stage all changes and commit with the JIRA task title from the current branch.
-        
+
         Returns:
             str: The commit message used (task title)
-            
+
         Raises:
             ClientException: If git operations fail or JIRA API calls fail
         """
         # Get current branch and extract task key
         current_branch = self.get_current_branch()
         task_key = self.extract_task_key_from_branch(current_branch)
-        
+
         if not task_key:
             raise ClientException(
                 f"Current branch '{current_branch}' does not follow the expected pattern (feature/TASK-KEY)"
             )
-        
+
         # Fetch task details from JIRA
         task = self.get_task_by_key(task_key)
         task_title = task.get("fields", {}).get("summary", "No title available")
         commit_message = task_title.lower()
-        
+
         # Stage all changes and commit with task title
         self.stage_and_commit_with_title(commit_message)
-        
+
         return commit_message
 
     def switch_to_task_branch(self, task_key: str) -> str:
         """
         Switch to the feature branch for the given task key.
-        
+
         Args:
             task_key (str): The JIRA task key
-            
+
         Returns:
             str: The branch name that was checked out
-            
+
         Raises:
             ClientException: If git operations fail
         """
         self.checkout_task_branch(task_key, create_new=True)
         return self.get_feature_branch_name(task_key)
 
-
-
-
-
     def open_task_in_browser(self, task_key: str):
         """Open a JIRA task in the default web browser."""
         if not task_key:
             raise ClientException("No task key found")
-            
+
         webbrowser.open(f"{self.jira_url.rstrip('/')}/browse/{task_key}")
 
     def get_project_name(self) -> str:
@@ -512,13 +655,10 @@ class JoraClient:
                         {
                             "type": "paragraph",
                             "content": [
-                                {
-                                    "type": "text",
-                                    "text": "Task created via Jora script"
-                                }
-                            ]
+                                {"type": "text", "text": "Task created via Jora script"}
+                            ],
                         }
-                    ]
+                    ],
                 },
                 "issuetype": {"name": "Task"},  # Default issue type
                 "assignee": {"accountId": account_id},
@@ -559,7 +699,7 @@ class JoraClient:
     def _fetch_jira_tasks_only(self) -> Dict:
         """
         Fetch only JIRA tasks without PR enrichment (for concurrent execution).
-        
+
         Returns:
             dict: Raw JIRA search results
         """
@@ -589,7 +729,7 @@ class JoraClient:
             "maxResults": self.MAX_RESULTS,
             "fields": "key,summary,status,priority",
             "startAt": 0,
-            "expand": "changelog"
+            "expand": "changelog",
         }
 
         # Make the API request using GET instead of POST for v3
@@ -610,10 +750,10 @@ class JoraClient:
     def get_task_by_key(self, task_key: str) -> Dict:
         """
         Fetch a single JIRA task by its key.
-        
+
         Args:
             task_key (str): The JIRA task key (e.g., "ABC-123")
-            
+
         Returns:
             dict: JIRA task data
         """
@@ -644,18 +784,105 @@ class JoraClient:
         except requests.exceptions.RequestException as e:
             raise ClientException(f"Failed to fetch task {task_key}: {str(e)}")
 
+    @staticmethod
+    def extract_adf_content(adf_description: dict) -> tuple[str, list[str]]:
+        """
+        Extract plain text and media URLs from JIRA's Atlassian Document Format (ADF).
+
+        Args:
+            adf_description (dict): ADF formatted description from JIRA API
+
+        Returns:
+            tuple: (description_text, list_of_media_urls)
+        """
+        if not adf_description or not isinstance(adf_description, dict):
+            return "", []
+
+        text_parts = []
+        media_urls = []
+
+        def extract_recursive(content):
+            """Recursively extract text and media from ADF content."""
+            if isinstance(content, dict):
+                node_type = content.get("type", "")
+
+                # Extract text nodes
+                if node_type == "text":
+                    text_parts.append(content.get("text", ""))
+
+                # Extract media nodes (images, files, etc.)
+                elif node_type in ("media", "mediaInline", "mediaSingle"):
+                    attrs = content.get("attrs", {})
+                    # Media nodes can have 'id' for attachments or direct 'url'
+                    media_id = attrs.get("id")
+                    if media_id:
+                        # For JIRA Cloud, construct attachment URL
+                        # Note: The actual URL construction depends on your JIRA setup
+                        media_urls.append(f"attachment:{media_id}")
+                    elif attrs.get("url"):
+                        media_urls.append(attrs["url"])
+
+                # Recurse into nested content
+                if "content" in content:
+                    for child in content["content"]:
+                        extract_recursive(child)
+
+            elif isinstance(content, list):
+                for item in content:
+                    extract_recursive(item)
+
+        extract_recursive(adf_description)
+        return " ".join(text_parts).strip(), media_urls
+
+    def get_task_context(self, task_key: Optional[str] = None) -> str:
+        """Generate task context string with summary, description, and attachments.
+
+        Args:
+            task_key (str, optional): The JIRA task key. If not provided, uses current branch task.
+
+        Returns:
+            Formatted string containing task information
+        """
+        # Get task key from current branch if not provided
+        if not task_key:
+            task_key = self.get_current_task_key()
+
+        # Fetch task details
+        task = self.get_task_by_key(task_key)
+
+        # Extract task information
+        task_summary = task.get("fields", {}).get("summary", "No summary")
+        task_description = task.get("fields", {}).get("description", {})
+
+        # Extract description text and media URLs
+        description_text, media_urls = self.extract_adf_content(task_description)
+
+        # Build task context
+        context = f"**Task:** {task_key}\n" f"**Summary:** {task_summary}\n\n"
+
+        if description_text:
+            context += f"**Description:**\n{description_text}\n\n"
+
+        if media_urls:
+            context += "**Images/Attachments:**\n"
+            for i, url in enumerate(media_urls, 1):
+                context += f"{i}. {url}\n"
+            context += "\n"
+
+        return context
+
     def get_cache_timestamp_formatted(self) -> Optional[str]:
         """Get the cache timestamp in a user-friendly format."""
         # Get tasks data with expiration metadata to calculate insertion time
         result = self.cache.get("tasks_data", expire_time=True)
         if not result or result[0] is None:
             return None
-        
+
         _, expire_time = result
         # Check if expire_time is None (cache entry without expiration)
         if expire_time is None:
             return None
-            
+
         # Calculate insertion time by subtracting TTL from expiration time
         store_time = datetime.fromtimestamp(expire_time - self.CACHE_TTL_SECONDS)
         return f"Updated {humanize.naturaltime(store_time)}"
@@ -674,28 +901,30 @@ class JoraClient:
         # Clear the cache if force refresh is requested
         if force_refresh:
             self.cache.clear()
-        
+
         # Check if we have cached data (diskcache handles expiration automatically)
         cached_data = self.cache.get("tasks_data")
         if cached_data is not None:
             return cached_data
-        
+
         # No cached data, fetch fresh
         fetch_time = datetime.now()
-        
+
         try:
             # Use ThreadPoolExecutor to fetch JIRA and GitHub data concurrently
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 # Submit both tasks concurrently
                 jira_future = executor.submit(self._fetch_jira_tasks_only)
                 pr_future = executor.submit(self._fetch_all_prs)
-                
+
                 # Wait for both to complete and get results
                 try:
-                    jira_results = jira_future.result(timeout=35)  # JIRA has 30s timeout + buffer
+                    jira_results = jira_future.result(
+                        timeout=35
+                    )  # JIRA has 30s timeout + buffer
                 except Exception as e:
                     raise ClientException(f"Failed to fetch JIRA tasks: {str(e)}")
-                
+
                 try:
                     all_prs = pr_future.result(timeout=15)  # PR fetch timeout + buffer
                 except Exception as e:
