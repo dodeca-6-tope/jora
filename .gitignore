@@ -11,3 +11,6 @@ env.template
 # Python cache files
 __pycache__/
 *.pyc
+
+# Cache files
+.cache/
