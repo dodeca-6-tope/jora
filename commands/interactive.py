@@ -7,6 +7,10 @@ import webbrowser
 from typing import Dict, List, Optional
 
 from .base import BaseCommand
+from .address import AddressCommand
+from .commit import CommitCommand
+from .implement import ImplementCommand
+from .review import ReviewCommand
 from keyboard_utils import KeyboardInput
 from exceptions import (
     ClientException,
@@ -221,8 +225,6 @@ class InteractiveCommand(BaseCommand):
             print(f"❌ Failed to create task: {str(e)}")
             return None
 
-
-
     def _display_task_header(self, task: Dict):
         """Display task information header."""
         task_key = task.get("key", "Unknown")
@@ -255,6 +257,55 @@ class InteractiveCommand(BaseCommand):
             except ClientException as e:
                 print(f"❌ Failed to checkout branch: {str(e)}")
                 self.wait_for_continue()
+        elif action_type == "implement":
+            self.clear_screen()
+            try:
+                # Switch to the task's branch first
+                branch_name = self.client.switch_to_task_branch(task_key)
+                print(f"✅ Switched to branch '{branch_name}'\n")
+
+                implement_command = ImplementCommand(self.client)
+                implement_command.execute()
+                # Exit after successful implementation
+                sys.exit(0)
+            except Exception:
+                self.wait_for_continue()
+        elif action_type == "review":
+            self.clear_screen()
+            try:
+                # Switch to the task's branch first
+                branch_name = self.client.switch_to_task_branch(task_key)
+                print(f"✅ Switched to branch '{branch_name}'\n")
+
+                review_command = ReviewCommand(self.client)
+                review_command.execute()
+                # Exit after successful review
+                sys.exit(0)
+            except Exception:
+                self.wait_for_continue()
+        elif action_type == "address":
+            self.clear_screen()
+            try:
+                # Switch to the task's branch first
+                branch_name = self.client.switch_to_task_branch(task_key)
+                print(f"✅ Switched to branch '{branch_name}'\n")
+
+                address_command = AddressCommand(self.client)
+                address_command.execute()
+                # Exit after successful addressing
+                sys.exit(0)
+            except Exception:
+                self.wait_for_continue()
+        elif action_type == "commit":
+            self.clear_screen()
+            try:
+                # Note: commit action works on current branch, no need to switch
+                # because we want to commit changes on whatever branch the user is currently on
+                commit_command = CommitCommand(self.client)
+                commit_command.execute()
+            except Exception:
+                pass
+            self.wait_for_continue()
         elif action_type == "create_pr":
             try:
                 print("🔄 Creating pull request...")
@@ -343,10 +394,10 @@ class InteractiveCommand(BaseCommand):
             branch_name = self.client.switch_to_task_branch(task_key)
             print(f"✅ Checked out '{branch_name}'")
             print(f"\n🎉 Ready to work on {task_key}!")
-            
+
             # Return True to indicate successful checkout and exit
             return True
-            
+
         except ClientException as e:
             print(f"❌ Failed to checkout branch: {str(e)}")
             return False
@@ -355,13 +406,37 @@ class InteractiveCommand(BaseCommand):
         """Show action menu for the selected task and handle user choice."""
         # Use cached PR information if available
         pr_exists = task.get("_has_pr", False)
+        task_key = task.get("key", "Unknown")
+
+        # Check current repository state for conditional actions
+        current_has_uncommitted = self.client.has_uncommitted_changes()
+
+        # Get branch state for the selected task
+        task_has_commits = self.client.task_branch_has_commits(task_key)
 
         actions = [
             ("🌐 Open task in browser", "browser"),
             ("🔀 Switch to branch", "switch_branch"),
         ]
 
-        # Add actions based on whether PR exists
+        # Add conditional actions based on selected task's branch state
+        if not task_has_commits and not current_has_uncommitted:
+            # Only show implement if the task has no commits and current branch has no uncommitted changes
+            actions.append(("🔨 Implement task", "implement"))
+
+        if task_has_commits and not current_has_uncommitted:
+            # Only show review if the task has commits and current branch has no uncommitted changes
+            actions.append(("🔍 Review implementation", "review"))
+
+        if pr_exists and not current_has_uncommitted:
+            # Only show address comments if PR exists and current branch has no uncommitted changes
+            actions.append(("📝 Address PR comments", "address"))
+
+        if current_has_uncommitted:
+            # Only show commit if there are uncommitted changes on current branch
+            actions.append(("💾 Commit changes", "commit"))
+
+        # Add PR actions based on whether PR exists
         if pr_exists:
             actions.insert(0, ("🔗 Open PR", "open_pr"))
         else:
@@ -428,7 +503,7 @@ class InteractiveCommand(BaseCommand):
                 self.print_header(
                     f"📋 Found {len(issues)} incomplete tasks (sorted by PR status):"
                 )
-                
+
                 # Show cache timestamp
                 cache_timestamp = self.client.get_cache_timestamp_formatted()
                 if cache_timestamp:
@@ -436,14 +511,13 @@ class InteractiveCommand(BaseCommand):
                     print()
 
                 # Display tasks with selection indicator
-                formatted_tasks = [
-                    self.format_task_output(task)
-                    for task in issues
-                ]
+                formatted_tasks = [self.format_task_output(task) for task in issues]
                 self.display_menu_items(formatted_tasks, selected_index)
 
                 self.print_header("", 80)
-                print(f"Selected: {selected_index + 1}/{len(issues)} | Press 'h' for help")
+                print(
+                    f"Selected: {selected_index + 1}/{len(issues)} | Press 'h' for help"
+                )
 
             # Get user input
             try:
@@ -472,13 +546,17 @@ class InteractiveCommand(BaseCommand):
                         print(
                             f"\n🎉 Task created successfully: {new_task.get('key', 'Unknown')}"
                         )
-                        print("💡 Press 'r' to refresh the task list to see your new task")
+                        print(
+                            "💡 Press 'r' to refresh the task list to see your new task"
+                        )
                     self.wait_for_continue()
                 elif key == "r":
                     # Refresh task list and PR information
                     print("\n🔄 Refreshing task list and PR information...")
                     try:
-                        result = self.client.fetch_my_incomplete_tasks(force_refresh=True)
+                        result = self.client.fetch_my_incomplete_tasks(
+                            force_refresh=True
+                        )
                         issues[:] = result.get("issues", [])  # Update the list in place
                         selected_index = 0  # Reset selection to top
                         print("✅ Task list and PR information refreshed!")
@@ -491,7 +569,9 @@ class InteractiveCommand(BaseCommand):
                     # Checkout selected task's branch and exit
                     if issues:  # Only if tasks exist
                         selected_task = issues[selected_index]
-                        checkout_success = self.checkout_selected_task_branch(selected_task)
+                        checkout_success = self.checkout_selected_task_branch(
+                            selected_task
+                        )
                         if checkout_success:
                             # Clean exit after successful checkout
                             return
@@ -504,7 +584,15 @@ class InteractiveCommand(BaseCommand):
                 elif key == "h":
                     print("\n📖 Help:")
                     print("  ↑/↓     Navigate tasks")
-                    print("  Enter   Show action menu (browser/branch)")
+                    print("  Enter   Show action menu with available options:")
+                    print("          🌐 Open task in browser")
+                    print("          🔀 Switch to branch")
+                    print("          🔗 Open PR (if PR exists)")
+                    print("          🔨 Implement task (if no commits yet)")
+                    print("          🔍 Review implementation (if commits exist)")
+                    print("          📝 Address PR comments (if PR exists)")
+                    print("          💾 Commit changes (if uncommitted changes)")
+                    print("          📝 Create PR (if no PR exists)")
                     print("  n       Create new task")
                     print("  c       Checkout selected task's branch and exit")
                     print("  r       Refresh task list and PR information")

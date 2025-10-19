@@ -165,6 +165,24 @@ class JoraClient:
             return ""
 
     @staticmethod
+    def task_branch_has_commits(task_key: str) -> bool:
+        """Check if the specified task's branch has any commits compared to develop."""
+        try:
+            task_branch = f"feature/{task_key}"
+            # Check if branch exists and has commits
+            result = subprocess.run(
+                ["git", "rev-list", "--count", f"origin/develop..{task_branch}"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            commit_count = int(result.stdout.strip())
+            return commit_count > 0
+        except (subprocess.CalledProcessError, ValueError):
+            # Branch doesn't exist or other error - assume no commits
+            return False
+
+    @staticmethod
     def get_all_task_changes() -> str:
         """Get diff of all changes in the current task branch compared to origin/develop."""
         try:
