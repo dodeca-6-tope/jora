@@ -1063,3 +1063,175 @@ class JoraClient:
 
         except requests.exceptions.RequestException as e:
             raise ClientException(f"Failed to fetch JIRA tasks: {str(e)}")
+
+    def get_repository_assignees(self) -> List[Dict]:
+        """
+        Get repository assignees (users who can be assigned to PRs/issues) using GitHub CLI.
+        Uses the assignees endpoint which is more appropriate than collaborators for PR assignment.
+
+        Returns:
+            List of assignee dictionaries from GitHub API
+        """
+        try:
+            # Use assignees endpoint instead of collaborators - this returns users who can be assigned to PRs
+            result = subprocess.run(
+                ["gh", "api", "repos/{owner}/{repo}/assignees", "--paginate"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=15,  # Increased timeout for paginated requests
+            )
+
+            if result.stdout.strip():
+                import json
+
+                return json.loads(result.stdout)
+            return []
+
+        except subprocess.CalledProcessError as e:
+            raise ClientException(f"Failed to fetch repository assignees: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise ClientException(f"Failed to parse assignees response: {str(e)}")
+        except Exception as e:
+            raise ClientException(f"Unexpected error fetching assignees: {str(e)}")
+
+    def assign_users_to_pr(self, usernames: List[str]) -> None:
+        """
+        Assign users to the current PR using GitHub API.
+        Computes the diff and only makes necessary API calls.
+
+        Args:
+            usernames: List of GitHub usernames to assign to the PR (empty list = clear all)
+        """
+        try:
+            # Get PR number and current assignees
+            result = subprocess.run(
+                ["gh", "pr", "view", "--json", "number,assignees"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+
+            if result.stdout.strip():
+                import json
+
+                pr_data = json.loads(result.stdout)
+                pr_number = pr_data.get("number")
+
+                if pr_number:
+                    # Get current assignees
+                    current_assignees = [
+                        assignee.get("login", "")
+                        for assignee in pr_data.get("assignees", [])
+                        if assignee.get("login", "")
+                    ]
+
+                    # Convert to sets for easy diff calculation
+                    current_set = set(current_assignees)
+                    target_set = set(usernames)
+
+                    # Calculate what needs to be added and removed
+                    to_add = target_set - current_set
+                    to_remove = current_set - target_set
+
+                    # Only make API calls if there are actual changes
+                    if not to_add and not to_remove:
+                        return  # No changes needed
+
+                    # Remove assignees that are no longer wanted
+                    if to_remove:
+                        remove_cmd = [
+                            "gh",
+                            "api",
+                            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/assignees",
+                            "-X",
+                            "DELETE",
+                        ]
+                        for username in to_remove:
+                            remove_cmd.extend(["-f", f"assignees[]={username}"])
+
+                        result = subprocess.run(
+                            remove_cmd, capture_output=True, text=True, timeout=10
+                        )
+
+                        if result.returncode != 0:
+                            error_msg = (
+                                result.stderr.strip()
+                                if result.stderr
+                                else "Unknown error"
+                            )
+                            raise ClientException(
+                                f"Failed to remove assignees: {error_msg}"
+                            )
+
+                    # Add new assignees
+                    if to_add:
+                        add_cmd = [
+                            "gh",
+                            "api",
+                            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/assignees",
+                            "-X",
+                            "POST",
+                        ]
+                        for username in to_add:
+                            add_cmd.extend(["-f", f"assignees[]={username}"])
+
+                        result = subprocess.run(
+                            add_cmd, capture_output=True, text=True, timeout=10
+                        )
+
+                        if result.returncode != 0:
+                            error_msg = (
+                                result.stderr.strip()
+                                if result.stderr
+                                else "Unknown error"
+                            )
+                            raise ClientException(
+                                f"Failed to add assignees: {error_msg}"
+                            )
+                else:
+                    raise ClientException("Could not determine PR number")
+            else:
+                raise ClientException("Could not get PR information")
+
+        except subprocess.CalledProcessError as e:
+            raise ClientException(f"Failed to update PR assignees: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise ClientException(f"Failed to parse PR data: {str(e)}")
+        except Exception as e:
+            raise ClientException(f"Unexpected error updating assignees: {str(e)}")
+
+    def get_current_pr_assignees(self) -> List[str]:
+        """
+        Get current assignees for the PR.
+
+        Returns:
+            List of usernames currently assigned to the PR
+        """
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", "--json", "assignees"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+
+            if result.stdout.strip():
+                import json
+
+                pr_data = json.loads(result.stdout)
+                return [
+                    assignee.get("login", "")
+                    for assignee in pr_data.get("assignees", [])
+                    if assignee.get("login", "")
+                ]
+            return []
+
+        except subprocess.CalledProcessError as e:
+            raise ClientException(f"Failed to get current assignees: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise ClientException(f"Failed to parse assignees data: {str(e)}")
+        except Exception as e:
+            raise ClientException(f"Unexpected error getting assignees: {str(e)}")

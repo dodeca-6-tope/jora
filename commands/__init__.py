@@ -3,6 +3,7 @@
 """Command package for Jora task manager."""
 
 from .address import AddressCommand
+from .assign import AssignCommand
 from .base import BaseCommand
 from .commit import CommitCommand
 from .implement import ImplementCommand
@@ -13,6 +14,7 @@ from .task_summary import TaskSummaryCommand
 
 __all__ = [
     "AddressCommand",
+    "AssignCommand",
     "BaseCommand",
     "CommitCommand",
     "ImplementCommand",

@@ -40,15 +40,16 @@ brew install gh && gh auth login
 
 ## Commands
 
-| Command   | What it does                                                  |
-| --------- | ------------------------------------------------------------- |
-| `jora -i` | Interactive task browser - select and switch to tasks         |
-| `jora -f` | Implement task using AI agent based on JIRA description       |
-| `jora -r` | Review all work on branch using AI agent, fix issues if found |
-| `jora -a` | Address unresolved PR comments using AI agent                 |
-| `jora -c` | Commit staged changes with JIRA task title                    |
-| `jora -p` | Create PR with task details                                   |
-| `jora -t` | Show current task title                                       |
-| `jora`    | Show help                                                     |
+| Command        | What it does                                                  |
+| -------------- | ------------------------------------------------------------- |
+| `jora -i`      | Interactive task browser - select and switch to tasks         |
+| `jora -f`      | Implement task using AI agent based on JIRA description       |
+| `jora -r`      | Review all work on branch using AI agent, fix issues if found |
+| `jora address` | Address unresolved PR comments using AI agent                 |
+| `jora assign`  | Assign users to PR with interactive autocomplete              |
+| `jora -c`      | Commit staged changes with JIRA task title                    |
+| `jora -p`      | Create PR with task details                                   |
+| `jora -t`      | Show current task title                                       |
+| `jora`         | Show help                                                     |
 
 **Works with any branch**: `feature/PROJ-123` → auto-detects `PROJ-123`

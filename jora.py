@@ -4,6 +4,7 @@ import argparse
 import sys
 from client import JoraClient
 from commands.address import AddressCommand
+from commands.assign import AssignCommand
 from commands.commit import CommitCommand
 from commands.implement import ImplementCommand
 from commands.interactive import InteractiveCommand
@@ -31,6 +32,12 @@ def main():
         choices=["github", "jira"],
         required=True,
         help="Specify service to address: 'github' for PR comments, 'jira' for task requirements",
+    )
+
+    # Assign subcommand
+    subparsers.add_parser(
+        "assign",
+        help="Assign users to the current pull request with multi-select and autocomplete",
     )
 
     # Legacy flag-based commands for backward compatibility
@@ -92,6 +99,8 @@ def main():
     try:
         if args.command == "address":
             command = AddressCommand(client, service=args.service)
+        elif args.command == "assign":
+            command = AssignCommand(client)
         elif args.commit_with_title:
             command = CommitCommand(client)
         elif args.implement:
