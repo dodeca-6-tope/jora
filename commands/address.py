@@ -5,38 +5,36 @@ import sys
 from .base import BaseCommand
 from exceptions import ClientException
 from cursor_agent_utils import CursorAgentStreamHandler, run_cursor_agent
-from rich.console import Console
-
-console = Console()
 
 
 class AddressCommand(BaseCommand):
-    """Address unresolved PR comments using cursor-agent."""
+    """Address GitHub PR comments or JIRA task requirements using cursor-agent."""
 
-    def __init__(self, client):
+    def __init__(self, client, service=None):
         """Initialize command with required dependencies."""
         self.client = client
         self.handler = CursorAgentStreamHandler()
+        self.service = service  # 'github' or 'jira' (required)
 
-    def _get_address_comments_prompt(self) -> str:
-        """Generate prompt for addressing unresolved PR comments."""
+    def _get_github_prompt(self) -> str:
+        """Generate prompt for addressing GitHub PR comments."""
         return (
-            "Let's systematically address all unresolved comments for the current PR.\n\n"
+            "Let's systematically address feedback from the PR review process.\n\n"
             "**WORKFLOW:**\n"
             "1. Use 'gh pr view --json title,number,url' to identify the current PR\n"
             "2. Use 'gh api' to fetch all review comments with their resolved status\n"
             "3. Filter for UNRESOLVED comments only\n"
-            "4. For each unresolved comment:\n"
+            "4. For each unresolved PR comment:\n"
             "   - Read and understand what change is being requested\n"
             "   - Locate the relevant code\n"
-            "   - Implement the fix as requested\n"
+            "   - Implement the fix/improvement as requested\n"
             "   - Verify the fix works and doesn't break existing functionality\n"
             "   - Stage and commit the fix with a CONCISE commit message:\n"
             "     * Keep it simple and descriptive\n"
             "     * Use lowercase\n"
             "     * Under 80 characters if possible\n"
             "     * Example: 'fix error handling in user service'\n"
-            "5. Continue until all unresolved comments are addressed\n\n"
+            "5. Continue until all PR feedback is addressed\n\n"
             "**CONSTRAINTS:**\n"
             "- Stay STRICTLY within PR scope - only modify files already changed in this PR\n"
             "- Do NOT make unnecessary changes beyond what's requested\n"
@@ -47,8 +45,40 @@ class AddressCommand(BaseCommand):
             "Provide a concise summary when complete."
         )
 
+    def _get_jira_prompt(self, jira_context: str) -> str:
+        """Generate prompt for addressing JIRA task requirements."""
+        prompt = "Let's systematically address requirements from the JIRA task.\n\n"
+        if jira_context:
+            prompt += f"{jira_context}\n\n"
+
+        prompt += (
+            "**WORKFLOW:**\n"
+            "1. Review the JIRA task description and comments above for requirements\n"
+            "2. Identify any missing functionality or requirements not yet implemented\n"
+            "3. For each requirement or piece of feedback:\n"
+            "   - Read and understand what change is being requested\n"
+            "   - Locate the relevant code or identify where new code should be added\n"
+            "   - Implement the fix/improvement as requested\n"
+            "   - Verify the fix works and doesn't break existing functionality\n"
+            "   - Stage and commit the fix with a CONCISE commit message:\n"
+            "     * Keep it simple and descriptive\n"
+            "     * Use lowercase\n"
+            "     * Under 80 characters if possible\n"
+            "     * Example: 'implement user validation feature'\n"
+            "4. Continue until all JIRA requirements are addressed\n\n"
+            "**CONSTRAINTS:**\n"
+            "- Focus on implementing missing functionality based on JIRA requirements\n"
+            "- Do NOT make unnecessary changes beyond what's requested\n"
+            "- NEVER modify untracked files or gitignored files (.env, credentials, etc.)\n"
+            "- Choose the simplest solution that addresses the requirements\n"
+            "- Maintain type safety - avoid 'any' types or unsafe casts\n"
+            "- Consider JIRA comments as requirements to implement, not just context\n\n"
+            "Provide a concise summary when complete."
+        )
+        return prompt
+
     def execute(self):
-        """Run cursor-agent to address unresolved comments on the current PR."""
+        """Run cursor-agent to address GitHub PR comments or JIRA requirements."""
         try:
             # Verify we're in a git repository
             if not self.client.ensure_git_repo():
@@ -61,20 +91,50 @@ class AddressCommand(BaseCommand):
                 print("ℹ️  Please commit or stash your changes before running address")
                 sys.exit(1)
 
-            # Check if a PR exists for the current branch
-            print("🔍 Checking for existing PR...")
-            pr_exists = self.client.check_pr_exists()
+            if self.service == "github":
+                # GitHub mode: check for PR and generate GitHub prompt
+                print("🔍 Checking for existing PR...")
+                pr_exists = self.client.check_pr_exists()
 
-            if not pr_exists:
-                print("❌ No PR found for the current branch.")
-                print("ℹ️  Use 'jora -p' to create a PR first.")
-                sys.exit(1)
+                if not pr_exists:
+                    print("❌ No PR found for the current branch.")
+                    print("ℹ️  Use 'jora -p' to create a PR first.")
+                    sys.exit(1)
 
-            print("✅ Found existing PR. Addressing unresolved comments...\n")
-            prompt = self._get_address_comments_prompt()
+                print("✅ Found existing PR. Addressing GitHub PR comments...\n")
+                prompt = self._get_github_prompt()
+                task_description = "Addressing GitHub PR Comments"
 
-            # Run addressing comments
-            exit_code = run_cursor_agent(prompt, self.handler, "Addressing PR Comments")
+            elif self.service == "jira":
+                # JIRA mode: get JIRA context and generate JIRA prompt
+                jira_context = ""
+                try:
+                    current_branch = self.client.get_current_branch()
+                    task_key = self.client.extract_task_key_from_branch(current_branch)
+
+                    if task_key:
+                        print(f"🔍 Fetching JIRA task context for {task_key}...")
+                        jira_context = self.client.get_jira_comments_context(task_key)
+                        if jira_context:
+                            print("✅ JIRA context loaded successfully")
+                        else:
+                            print("⚠️  Could not load JIRA context")
+                    else:
+                        print(
+                            "ℹ️  No JIRA task key found in branch name - skipping JIRA context"
+                        )
+                except Exception as e:
+                    print(f"⚠️  Could not fetch JIRA context: {str(e)}")
+                    print("❌ Cannot proceed with JIRA mode without JIRA context")
+                    sys.exit(1)
+
+                prompt = self._get_jira_prompt(jira_context)
+                task_description = "Addressing JIRA Requirements"
+            else:
+                raise ValueError(f"Unsupported service: {self.service}")
+
+            # Run addressing
+            exit_code = run_cursor_agent(prompt, self.handler, task_description)
 
             if exit_code != 0:
                 sys.exit(exit_code)

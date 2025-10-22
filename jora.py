@@ -16,6 +16,24 @@ from exceptions import ClientException
 def main():
     """Main function to handle Jora task management."""
     parser = argparse.ArgumentParser(description="Jora - JIRA Task Manager")
+
+    # Create subcommands
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Address subcommand with service option
+    address_parser = subparsers.add_parser(
+        "address",
+        help="Address unresolved PR comments and/or JIRA feedback using AI agent",
+    )
+    address_parser.add_argument(
+        "-s",
+        "--service",
+        choices=["github", "jira"],
+        required=True,
+        help="Specify service to address: 'github' for PR comments, 'jira' for task requirements",
+    )
+
+    # Legacy flag-based commands for backward compatibility
     parser.add_argument(
         "-i",
         "--interactive",
@@ -33,12 +51,6 @@ def main():
         "--review",
         action="store_true",
         help="Review all work on branch using AI agent, fix issues if found (requires clean working directory)",
-    )
-    parser.add_argument(
-        "-a",
-        "--address",
-        action="store_true",
-        help="Address unresolved PR comments using AI agent (requires clean working directory)",
     )
     parser.add_argument(
         "-c",
@@ -62,7 +74,7 @@ def main():
     args = parser.parse_args()
 
     # If no arguments provided, show help
-    if not any(vars(args).values()):
+    if not any(vars(args).values()) and args.command is None:
         parser.print_help()
         return
 
@@ -78,8 +90,8 @@ def main():
 
     # Create and execute appropriate command
     try:
-        if args.address:
-            command = AddressCommand(client)
+        if args.command == "address":
+            command = AddressCommand(client, service=args.service)
         elif args.commit_with_title:
             command = CommitCommand(client)
         elif args.implement:

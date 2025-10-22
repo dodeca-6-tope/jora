@@ -802,6 +802,46 @@ class JoraClient:
         except requests.exceptions.RequestException as e:
             raise ClientException(f"Failed to fetch task {task_key}: {str(e)}")
 
+    def get_task_comments(self, task_key: str) -> List[Dict]:
+        """
+        Fetch all comments for a JIRA task.
+
+        Args:
+            task_key (str): The JIRA task key (e.g., "ABC-123")
+
+        Returns:
+            list: List of comment data from JIRA API
+        """
+        # Prepare the API endpoint for getting task comments
+        url = f"{self.jira_url.rstrip('/')}/rest/api/3/issue/{task_key}/comment"
+
+        # Prepare authentication
+        auth = (self.jira_email, self.jira_api_key)
+
+        # Prepare headers
+        headers = {"Accept": "application/json"}
+
+        try:
+            # Make the API request
+            response = requests.get(
+                url,
+                auth=auth,
+                headers=headers,
+                timeout=30,
+            )
+
+            # Check if request was successful
+            response.raise_for_status()
+
+            # Get the comments data
+            result = response.json()
+            return result.get("comments", [])
+
+        except requests.exceptions.RequestException as e:
+            raise ClientException(
+                f"Failed to fetch comments for task {task_key}: {str(e)}"
+            )
+
     @staticmethod
     def extract_adf_content(adf_description: dict) -> tuple[str, list[str]]:
         """
@@ -851,6 +891,53 @@ class JoraClient:
 
         extract_recursive(adf_description)
         return " ".join(text_parts).strip(), media_urls
+
+    def get_jira_comments_context(self, task_key: str) -> str:
+        """
+        Get formatted context for Jira task comments and description.
+
+        Args:
+            task_key (str): The JIRA task key
+
+        Returns:
+            str: Formatted context including task description and comments
+        """
+        try:
+            # Fetch task details and comments
+            task = self.get_task_by_key(task_key)
+            comments = self.get_task_comments(task_key)
+
+            task_summary = task.get("fields", {}).get("summary", "No summary")
+            task_description = task.get("fields", {}).get("description", {})
+
+            # Extract description text
+            description_text, _ = self.extract_adf_content(task_description)
+
+            # Build context
+            context = f"**JIRA Task: {task_key}**\n"
+            context += f"**Summary:** {task_summary}\n\n"
+
+            if description_text:
+                context += f"**Description:**\n{description_text}\n\n"
+
+            if comments:
+                context += "**Comments:**\n"
+                for i, comment in enumerate(comments, 1):
+                    author = comment.get("author", {}).get("displayName", "Unknown")
+                    created = comment.get("created", "Unknown date")
+                    body = comment.get("body", {})
+
+                    # Extract comment text from ADF format
+                    comment_text, _ = self.extract_adf_content(body)
+
+                    if comment_text:
+                        context += f"{i}. **{author}** ({created}):\n{comment_text}\n\n"
+
+            return context
+
+        except ClientException:
+            # If we can't fetch Jira data, return empty context
+            return ""
 
     def get_task_context(self, task_key: Optional[str] = None) -> str:
         """Generate task context string with summary, description, and attachments.
