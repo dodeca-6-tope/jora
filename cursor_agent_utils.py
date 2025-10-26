@@ -154,7 +154,10 @@ class CursorAgentStreamHandler:
 
 
 def run_cursor_agent(
-    prompt: str, handler: CursorAgentStreamHandler, phase_name: str = "Task"
+    prompt: str,
+    handler: CursorAgentStreamHandler,
+    phase_name: str = "Task",
+    auto_pilot: bool = True,
 ) -> int:
     """Run cursor-agent with the given prompt and stream handler.
 
@@ -162,13 +165,22 @@ def run_cursor_agent(
         prompt: The prompt to send to cursor-agent
         handler: The stream handler to use for output
         phase_name: Name of the phase for display (e.g., "Implementation", "Review")
+        auto_pilot: If True, runs with autopilot flags. If False, runs as interactive shell command.
 
     Returns:
         The exit code from cursor-agent
     """
+    if not auto_pilot:
+        # Run as regular shell command - just pass the prompt, no flags
+        result = subprocess.run(
+            ["cursor-agent", prompt],
+            check=False,
+        )
+        return result.returncode
+
     start_time = time.time()
 
-    # Run cursor-agent with streaming output
+    # Auto-pilot mode: Run cursor-agent with streaming output
     process = subprocess.Popen(
         [
             "cursor-agent",

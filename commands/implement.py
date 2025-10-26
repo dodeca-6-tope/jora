@@ -11,7 +11,7 @@ console = Console()
 
 
 class ImplementCommand(BaseCommand):
-    """Implement task using cursor-agent based on JIRA task description."""
+    """Guide implementation of task using cursor-agent with user approval at each step."""
 
     def __init__(self, client):
         """Initialize command with required dependencies."""
@@ -25,116 +25,58 @@ class ImplementCommand(BaseCommand):
 
         # Build prompt
         prompt = (
-            f"Let's implement the following JIRA task:\n\n"
-            f"{task_context}"
-            "**IMPLEMENTATION APPROACH:**\n"
+            f"Let's work together to implement the following JIRA task:\n\n"
+            f"{task_context}\n\n"
+            "**WORKING APPROACH:**\n"
             "1. Study the task requirements carefully\n"
-            "2. Analyze existing codebase: patterns, conventions, architecture, and style\n"
-            "3. Plan your implementation to match the existing approach\n"
-            "4. Implement the solution thoroughly and completely\n"
-            "5. Test your changes to ensure correctness\n"
-            "6. Clean up: remove unused imports, dead code, temporary files, and commented-out code\n\n"
-            "**SCOPE BOUNDARIES:**\n"
-            "- Focus on files and code directly related to the task requirements\n"
-            "- Apply code quality practices to: new code you write + existing code you modify\n"
-            "- Do NOT refactor unrelated existing code that works fine\n"
-            "- Do NOT make changes outside the scope of the task requirements\n"
-            "- Keep changes focused and minimal - only what's needed for the task\n\n"
-            "**CODE QUALITY:**\n"
-            "- Write the most direct, straightforward code possible - no unnecessary ceremony\n"
-            "- Use `const` with immediate initialization - avoid `let` declarations followed by assignment\n"
+            "2. Analyze the codebase to understand relevant patterns, conventions, and architecture\n"
+            "3. **BEFORE making any changes**, present your analysis and proposed approach to me\n"
+            "4. Wait for my guidance and approval before proceeding\n"
+            "5. Make changes incrementally based on my feedback\n"
+            "6. Ask for clarification whenever requirements are unclear\n\n"
+            "**CRITICAL RULES:**\n"
+            "- DO NOT make any code changes without consulting me first\n"
+            "- Present your plan and wait for approval before implementing\n"
+            "- Show me what you intend to change and ask for confirmation\n"
+            "- Work incrementally - small changes that I can review and approve\n"
+            "- If you're unsure about any decision, ask me for guidance\n\n"
+            "**CODE QUALITY GUIDELINES:**\n"
+            "When I approve changes, follow these practices:\n"
+            "- Write direct, straightforward code - no unnecessary ceremony\n"
+            "- Use `const` with immediate initialization\n"
             "- Choose the simplest solution that solves the problem\n"
-            "- Avoid over-engineering or unnecessary abstractions\n"
             "- Match existing patterns, naming conventions, and architectural decisions\n"
             "- Follow existing code style: indentation, formatting, import organization\n"
-            "- Maintain type safety - avoid 'any' types or unsafe casts\n"
-            "- Write self-documenting code with comments only where needed\n"
+            "- Avoid over-engineering or unnecessary abstractions\n"
             "- Focus strictly on requirements - no speculative features\n"
-            "- Leave no unused code, imports, or files behind\n"
-            "- NEVER modify untracked files or gitignored files (.env, credentials, etc.)\n"
-            "- Only work with tracked source code files\n\n"
-            "**VARIABLE USAGE (apply to code you write or modify for this task):**\n"
-            "- These practices are NOT optional - write clean code from the start\n"
-            "- Avoid unnecessary intermediate variables - use object properties directly\n"
-            "- NEVER split variable declaration and assignment unnecessarily:\n"
-            "  * ❌ BAD: `let result; result = await fetch();`\n"
-            "  * ✅ GOOD: `const result = await fetch();`\n"
-            "- NEVER extract object properties to single-use variables:\n"
-            "  * ❌ BAD: `const result = await fn(); const buf = result.buffer; const type = result.mimeType; use(buf, type);`\n"
-            "  * ✅ GOOD: `const result = await fn(); use(result.buffer, result.mimeType);`\n"
-            "- NEVER declare variables outside try-catch just to use them after - move the usage INSIDE the try:\n"
-            "  * ❌ BAD: `let data; try { data = await fetch(); } catch (e) { ... } use(data);`\n"
-            "  * ✅ GOOD: `try { const data = await fetch(); use(data); } catch (e) { ... }`\n"
-            "  * The key: if `use(data)` depends on success, it belongs at the end of the try block\n"
-            "- Only extract to variables if:\n"
-            "  * Used 3+ times: `const name = user.displayName; log(name); save(name); send(name);`\n"
-            "  * Significantly improves readability: `const isEligible = user.age >= 18 && user.verified && !user.banned;`\n"
-            "  * Avoids repeated computation: `const expensive = complexCalculation(); use1(expensive); use2(expensive);`\n\n"
-            "**FUNCTION SIGNATURES:**\n"
-            "- Don't make functions flexible unless flexibility is actually needed\n"
-            "- If a function is only called one way, use concrete types and parameters for that use case\n"
-            "- Only add optional parameters, generic types, or configuration options when:\n"
-            "  * The function is already called in multiple ways in the existing code\n"
-            "  * The requirements explicitly call for configurable behavior\n"
-            "  * There's a clear, immediate need for flexibility\n"
-            "- Avoid anticipating future needs - solve the current problem directly\n"
-            "- Keep function signatures as simple and specific as possible\n\n"
-            "**ERROR HANDLING & SCOPE (apply to code you write or modify for this task):**\n"
-            "- CRITICAL: Success-dependent code belongs INSIDE the try block, not after the catch\n"
-            "- If code should only run when the try block succeeds, put it at the END of the try block\n"
-            "- This eliminates the need for intermediate `let` variables declared outside try-catch\n"
-            "- Only put code after try-catch if it must run regardless of success/failure (e.g., cleanup)\n"
-            "- Examples:\n"
-            "  * ❌ BAD: `let result; try { result = await generate(); } catch(e) { throw e; } store.set(result);`\n"
-            "  * ✅ GOOD: `try { const result = await generate(); store.set(result); } catch(e) { throw e; }`\n"
-            "  * ❌ BAD: `let data; try { data = await fetch(); } catch(e) { log(e); throw e; } return process(data);`\n"
-            "  * ✅ GOOD: `try { const data = await fetch(); return process(data); } catch(e) { log(e); throw e; }`\n\n"
-            "**EFFICIENCY:**\n"
-            "- Work incrementally - don't try to do everything at once\n"
-            "- Use targeted file reads instead of reading entire large files\n"
-            "- Avoid infinite loops or excessive recursion\n"
-            "- If stuck, move on and note what needs manual attention\n\n"
-            "**FINAL STEP - VERIFY AND COMMIT:**\n"
-            "After completing the implementation:\n"
-            "1. Run `yarn check` to verify everything passes\n"
-            "   - If any checks fail, fix the issues before proceeding\n"
-            "   - Do not commit if `yarn check` fails\n"
-            "2. Format touched files with prettier:\n"
-            "   - Get list of modified files: git diff --name-only\n"
-            "   - Run prettier on those files: npx prettier --write <file1> <file2> ...\n"
-            "   - Only format files that were actually touched in this implementation\n"
-            "3. Stage all changes: git add -A\n"
-            "4. Create a commit with a CONCISE commit message:\n"
-            "   - Keep it simple and descriptive\n"
-            "   - Use lowercase\n"
-            "   - Under 80 characters if possible\n"
-            "   - Example: 'implement user authentication flow'\n"
-            "5. Confirm the commit was successful\n\n"
-            "Provide a concise summary when complete."
+            "- Keep changes minimal and focused\n\n"
+            "**SCOPE BOUNDARIES:**\n"
+            "- Focus only on files directly related to the task\n"
+            "- Do NOT refactor unrelated code\n"
+            "- Do NOT make changes outside the task scope\n"
+            "- NEVER modify untracked or gitignored files\n\n"
+            "Let's start by analyzing the task and discussing the approach together."
         )
 
         return prompt
 
     def execute(self):
-        """Run cursor-agent to implement the task based on JIRA description."""
+        """Run cursor-agent to guide implementation based on JIRA description."""
         try:
             # Verify we're in a git repository
             if not self.client.ensure_git_repo():
                 print("❌ Not in a git repository")
                 sys.exit(1)
 
-            # Check for uncommitted changes
-            if self.client.has_uncommitted_changes():
-                print("❌ You have uncommitted changes")
-                print("ℹ️  Please commit or stash your changes before running implement")
-                sys.exit(1)
+            print("🤝 Starting collaborative implementation session...\n")
 
-            print("🔨 Implementing task...\n")
-
-            # Run implementation
+            # Run implementation with guidance
             implementation_prompt = self._get_implement_task_prompt()
             exit_code = run_cursor_agent(
-                implementation_prompt, self.handler, "Implementation"
+                implementation_prompt,
+                self.handler,
+                "Guided Implementation",
+                auto_pilot=False,
             )
 
             if exit_code != 0:
