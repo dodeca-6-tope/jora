@@ -6,6 +6,7 @@ from .address import AddressCommand
 from .assign import AssignCommand
 from .base import BaseCommand
 from .commit import CommitCommand
+from .deploy import DeployCommand
 from .implement import ImplementCommand
 from .interactive import InteractiveCommand
 from .pr import PRCommand
@@ -17,6 +18,7 @@ __all__ = [
     "AssignCommand",
     "BaseCommand",
     "CommitCommand",
+    "DeployCommand",
     "ImplementCommand",
     "InteractiveCommand",
     "PRCommand",

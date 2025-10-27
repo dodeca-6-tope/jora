@@ -1235,3 +1235,86 @@ class JoraClient:
             raise ClientException(f"Failed to parse assignees data: {str(e)}")
         except Exception as e:
             raise ClientException(f"Unexpected error getting assignees: {str(e)}")
+
+    def add_deploy_label_to_pr(self) -> None:
+        """
+        Add a deploy label to the current PR using GitHub API.
+        """
+        try:
+            # Get PR number
+            result = subprocess.run(
+                ["gh", "pr", "view", "--json", "number"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+
+            if result.stdout.strip():
+                pr_data = json.loads(result.stdout)
+                pr_number = pr_data.get("number")
+
+                if pr_number:
+                    # Add deploy label using GitHub API
+                    subprocess.run(
+                        [
+                            "gh",
+                            "api",
+                            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/labels",
+                            "-X",
+                            "POST",
+                            "-f",
+                            "labels[]=deploy",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=10,
+                    )
+                else:
+                    raise ClientException("Could not determine PR number")
+            else:
+                raise ClientException("Could not get PR information")
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr if e.stderr else str(e)
+            # Check if the error is about label not existing
+            if "Label does not exist" in error_msg or "Not Found" in error_msg:
+                raise ClientException(
+                    "Label 'deploy' does not exist in this repository. "
+                    "Create it first at: https://github.com/{owner}/{repo}/labels"
+                )
+            else:
+                raise ClientException(f"Failed to add deploy label: {error_msg}")
+        except json.JSONDecodeError as e:
+            raise ClientException(f"Failed to parse PR data: {str(e)}")
+        except Exception as e:
+            raise ClientException(f"Unexpected error adding deploy label: {str(e)}")
+
+    def get_current_pr_url(self) -> str:
+        """
+        Get the URL of the current PR.
+
+        Returns:
+            str: The PR URL
+        """
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", "--json", "url"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+
+            if result.stdout.strip():
+                pr_data = json.loads(result.stdout)
+                return pr_data.get("url", "")
+            return ""
+
+        except subprocess.CalledProcessError as e:
+            raise ClientException(f"Failed to get PR URL: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise ClientException(f"Failed to parse PR data: {str(e)}")
+        except Exception as e:
+            raise ClientException(f"Unexpected error getting PR URL: {str(e)}")

@@ -6,6 +6,7 @@ from client import JoraClient
 from commands.address import AddressCommand
 from commands.assign import AssignCommand
 from commands.commit import CommitCommand
+from commands.deploy import DeployCommand
 from commands.implement import ImplementCommand
 from commands.interactive import InteractiveCommand
 from commands.pr import PRCommand
@@ -38,6 +39,12 @@ def main():
     subparsers.add_parser(
         "assign",
         help="Assign users to the current pull request with multi-select and autocomplete",
+    )
+
+    # Deploy subcommand
+    subparsers.add_parser(
+        "deploy",
+        help="Add a deploy badge to the current pull request",
     )
 
     # Legacy flag-based commands for backward compatibility
@@ -101,6 +108,8 @@ def main():
             command = AddressCommand(client, service=args.service)
         elif args.command == "assign":
             command = AssignCommand(client)
+        elif args.command == "deploy":
+            command = DeployCommand(client)
         elif args.commit_with_title:
             command = CommitCommand(client)
         elif args.implement:
