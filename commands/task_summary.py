@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+"""
+Task Summary Command Module
+
+Displays the task key and title for the current branch.
+"""
+
 import sys
 from .base import BaseCommand
 from exceptions import ClientException
@@ -20,19 +26,17 @@ class TaskSummaryCommand(BaseCommand):
             task_key = self.client.extract_task_key_from_branch(current_branch)
             
             if not task_key:
-                print(f"❌ Current branch '{current_branch}' is not associated with a task.")
-                print("💡 Task branches should follow the pattern: feature/TASK-KEY")
+                print(f"Error: Branch '{current_branch}' not a task branch")
                 sys.exit(1)
             
             # Fetch the specific task
             task = self.client.get_task_by_key(task_key)
             
             # Extract and display task title
-            fields = task.get("fields", {})
-            summary = fields.get("summary", "No summary available")
+            title = task.get("title", "No title available")
             
-            print(summary)
+            print(f"{task_key}: {title}")
             
         except ClientException as e:
-            print(f"❌ Client Error: {str(e)}")
+            print(f"Error: {str(e)}")
             sys.exit(1)

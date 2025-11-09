@@ -101,15 +101,14 @@ if [ ! -f "\$PROJECT_ROOT/.env" ]; then
     echo "❌ No .env file found in project root directory: \$PROJECT_ROOT"
     echo "📝 Creating template .env file..."
     cat > "\$PROJECT_ROOT/.env" << 'ENVEOF'
-# JIRA Configuration
-# Get your API key from: https://id.atlassian.com/manage-profile/security/api-tokens
-JIRA_URL=https://yourcompany.atlassian.net
-JIRA_EMAIL=your.email@company.com
-JIRA_API_KEY=your_jira_api_key_here
-JIRA_PROJECT_KEY=YOUR_PROJECT_KEY
+# Linear Configuration
+# Get your API key from: https://linear.app/settings/api
+LINEAR_API_KEY=your_linear_api_key_here
+LINEAR_TEAM_KEY=YOUR_TEAM_KEY
+LINEAR_WORKSPACE=your-workspace-name
 ENVEOF
     echo "✅ Created .env template at \$PROJECT_ROOT/.env"
-    echo "⚠️  Please edit this file and add your JIRA credentials before running again"
+    echo "⚠️  Please edit this file and add your Linear credentials before running again"
     exit 1
 fi
 
@@ -204,7 +203,7 @@ echo
 echo -e "${BLUE}Next steps:${NC}"
 echo -e "1. Navigate to any git repository where you want to use Jora"
 echo -e "2. Run ${YELLOW}jora${NC} - it will create a .env template file in the repository root"
-echo -e "3. Edit the .env file with your JIRA credentials"
+echo -e "3. Edit the .env file with your Linear credentials"
 echo -e "4. Run ${YELLOW}jora${NC} again to start using the tool"
 echo
 echo -e "${BLUE}Usage examples (from anywhere within a git repository):${NC}"

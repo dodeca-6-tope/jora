@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+"""
+Linear Client Module
+
+Provides a unified client for all Linear API, Git, and GitHub operations.
+Handles task management, branch operations, PR creation, and caching.
+"""
+
 import json
 import os
 import subprocess
@@ -17,48 +24,137 @@ import humanize
 from exceptions import ClientException
 
 
-class JoraClient:
-    """Unified client for all JIRA, Git, and GitHub operations."""
+class LinearClient:
+    """Unified client for all Linear, Git, and GitHub operations."""
 
-    # JIRA-specific configuration
-    MAX_RESULTS = 50
-    EXCLUDED_STATUSES = ["Done", "Resolved", "Closed", "Cancelled"]
+    # Linear API configuration
+    LINEAR_API_URL = "https://api.linear.app/graphql"
 
     # Cache configuration
     CACHE_TTL_SECONDS = 86400  # 1 day (24 * 60 * 60)
 
     def __init__(self):
+        """
+        Initialize the LinearClient with configuration from environment variables.
+
+        Loads configuration from .env file in the git repository root, initializes
+        the cache, and validates required settings.
+
+        Raises:
+            ClientException: If required configuration is missing or invalid
+        """
         # Load environment variables from project root directory
         project_root = self.get_git_root()
         load_dotenv(project_root / ".env")
 
-        self.jira_url = os.getenv("JIRA_URL")
-        self.jira_email = os.getenv("JIRA_EMAIL")
-        self.jira_api_key = os.getenv("JIRA_API_KEY")
-        self.jira_project_key = os.getenv("JIRA_PROJECT_KEY")
+        self.linear_api_key = os.getenv("LINEAR_API_KEY")
+        self.linear_team_id = os.getenv("LINEAR_TEAM_ID")
+        self.linear_team_key = os.getenv("LINEAR_TEAM_KEY")
+        self.linear_workspace = os.getenv("LINEAR_WORKSPACE")  # e.g., "lightricks"
 
         # Initialize cache
         cache_dir = project_root / ".cache"
         self.cache = dc.Cache(str(cache_dir))
 
         # Validate configuration
-        if not self.jira_url:
+        if not self.linear_api_key:
             raise ClientException(
-                "Missing JIRA URL configuration. Please set JIRA_URL "
-                "environment variable (e.g., https://yourcompany.atlassian.net)."
+                "Missing Linear API key. Please set LINEAR_API_KEY "
+                "environment variable. Get your API key from: "
+                "https://linear.app/settings/api"
             )
 
-        if not self.jira_email or not self.jira_api_key:
+        # Need either team ID or team key
+        if not self.linear_team_id and not self.linear_team_key:
             raise ClientException(
-                "Missing required JIRA configuration. Please set JIRA_EMAIL and "
-                "JIRA_API_KEY environment variables."
+                "Missing Linear team configuration. Please set either LINEAR_TEAM_ID (UUID) "
+                "or LINEAR_TEAM_KEY (e.g., 'ENG', 'SALES') environment variable."
             )
 
-        if not self.jira_project_key:
-            raise ClientException(
-                "Missing JIRA project configuration. Please set JIRA_PROJECT_KEY "
-                "environment variable."
+        # If we have team key but no ID, fetch the ID
+        if self.linear_team_key and not self.linear_team_id:
+            try:
+                self.linear_team_id = self._get_team_id_by_key(self.linear_team_key)
+            except Exception:
+                # If it fails, assume linear_team_key is actually the ID
+                self.linear_team_id = self.linear_team_key
+
+    def _make_graphql_request(
+        self, query: str, variables: Optional[Dict] = None
+    ) -> Dict:
+        """
+        Make a GraphQL request to Linear API.
+
+        Args:
+            query (str): GraphQL query or mutation
+            variables (dict, optional): Variables for the query
+
+        Returns:
+            dict: Response data from Linear API
+
+        Raises:
+            ClientException: If the request fails
+        """
+        headers = {
+            "Authorization": self.linear_api_key,
+            "Content-Type": "application/json",
+        }
+
+        payload = {"query": query}
+        if variables:
+            payload["variables"] = variables
+
+        try:
+            response = requests.post(
+                self.LINEAR_API_URL,
+                headers=headers,
+                json=payload,
+                timeout=30,
             )
+            response.raise_for_status()
+
+            data = response.json()
+
+            if "errors" in data:
+                error_messages = [
+                    error.get("message", str(error)) for error in data["errors"]
+                ]
+                raise ClientException(f"Linear API error: {', '.join(error_messages)}")
+
+            return data.get("data", {})
+
+        except requests.exceptions.RequestException as e:
+            raise ClientException(f"Failed to connect to Linear API: {str(e)}")
+
+    def _get_team_id_by_key(self, team_key: str) -> str:
+        """Get team UUID by team key (e.g., 'ENG' -> UUID).
+
+        Args:
+            team_key: The team key (e.g., 'ENG', 'SALES')
+
+        Returns:
+            The team UUID
+        """
+        query = """
+        {
+            teams {
+                nodes {
+                    id
+                    key
+                    name
+                }
+            }
+        }
+        """
+
+        result = self._make_graphql_request(query)
+        teams = result.get("teams", {}).get("nodes", [])
+
+        for team in teams:
+            if team.get("key") == team_key:
+                return team.get("id")
+
+        raise ClientException(f"Team with key '{team_key}' not found")
 
     @staticmethod
     def ensure_git_repo() -> bool:
@@ -271,7 +367,7 @@ class JoraClient:
         """Stage all changes and commit with the given task title."""
         try:
             # Check if we're in a git repository
-            if not JoraClient.ensure_git_repo():
+            if not LinearClient.ensure_git_repo():
                 raise ClientException("Not in a git repository")
 
             # Stage all changes
@@ -479,7 +575,7 @@ class JoraClient:
 
     def create_new_pr(self, task: Dict):
         """Create a new PR for the given task."""
-        task_key = task.get("key", "Unknown")
+        task_key = task.get("identifier", "Unknown")
 
         if not task_key:
             raise ClientException("No task key found")
@@ -487,8 +583,9 @@ class JoraClient:
         # Compute branch name from task key
         branch_name = self.get_feature_branch_name(task_key)
 
-        pr_title = f"[{task_key}] {task.get("fields", {}).get("summary", "No summary")}"
-        pr_body = f"[{task_key}]\n\n---\n*Created by [Jora](https://github.com/dodeca-6-tope/jora)*"
+        task_title = task.get("title", "No title")
+        pr_title = f"[{task_key}] {task_title}"
+        pr_body = ""
 
         try:
             # Ensure we're in a git repository
@@ -536,13 +633,13 @@ class JoraClient:
 
     def commit_current_task(self) -> str:
         """
-        Stage all changes and commit with the JIRA task title from the current branch.
+        Stage all changes and commit with the Linear task title from the current branch.
 
         Returns:
             str: The commit message used (task title)
 
         Raises:
-            ClientException: If git operations fail or JIRA API calls fail
+            ClientException: If git operations fail or Linear API calls fail
         """
         # Get current branch and extract task key
         current_branch = self.get_current_branch()
@@ -553,9 +650,9 @@ class JoraClient:
                 f"Current branch '{current_branch}' does not follow the expected pattern (feature/TASK-KEY)"
             )
 
-        # Fetch task details from JIRA
+        # Fetch task details from Linear
         task = self.get_task_by_key(task_key)
-        task_title = task.get("fields", {}).get("summary", "No title available")
+        task_title = task.get("title", "No title available")
         commit_message = task_title.lower()
 
         # Stage all changes and commit with task title
@@ -568,7 +665,7 @@ class JoraClient:
         Switch to the feature branch for the given task key.
 
         Args:
-            task_key (str): The JIRA task key
+            task_key (str): The Linear task key
 
         Returns:
             str: The branch name that was checked out
@@ -580,428 +677,243 @@ class JoraClient:
         return self.get_feature_branch_name(task_key)
 
     def open_task_in_browser(self, task_key: str):
-        """Open a JIRA task in the default web browser."""
+        """Open a Linear task in the default web browser."""
         if not task_key:
             raise ClientException("No task key found")
 
-        webbrowser.open(f"{self.jira_url.rstrip('/')}/browse/{task_key}")
+        # Construct Linear URL directly
+        if self.linear_workspace:
+            url = f"https://linear.app/{self.linear_workspace}/issue/{task_key}"
+        else:
+            # Fallback: use generic linear.app URL (will redirect to correct workspace)
+            url = f"https://linear.app/issue/{task_key}"
 
-    def get_project_name(self) -> str:
-        """Get the project key for display purposes."""
-        return self.jira_project_key
+        webbrowser.open(url)
 
-    def _get_account_id_by_email(self, email: str) -> str:
+    def get_viewer_id(self) -> str:
         """
-        Get JIRA account ID using email address.
-
-        Args:
-            email (str): Email address to search for
+        Get the current user's ID from Linear.
 
         Returns:
-            str: The account ID for the user
+            str: The current user's ID
         """
-        # Prepare the API endpoint for user search
-        url = f"{self.jira_url.rstrip('/')}/rest/api/3/user/search"
-
-        # Prepare authentication
-        auth = (self.jira_email, self.jira_api_key)
-
-        # Prepare headers
-        headers = {"Accept": "application/json"}
-
-        # Search parameters
-        params = {"query": email, "maxResults": 1}
-
-        try:
-            response = requests.get(
-                url, auth=auth, headers=headers, params=params, timeout=30
-            )
-            response.raise_for_status()
-
-            users = response.json()
-            if not users:
-                raise ClientException(f"No user found with email: {email}")
-
-            account_id = users[0].get("accountId")
-            if not account_id:
-                raise ClientException(f"Account ID not found for user: {email}")
-
-            return account_id
-
-        except requests.exceptions.RequestException as e:
-            raise ClientException(f"Failed to get account ID: {str(e)}")
-
-    def get_project_components(self, project_key: str) -> List[str]:
-        """Get all available components for the specified project."""
-        try:
-            url = f"{self.jira_url.rstrip('/')}/rest/api/3/project/{project_key}/components"
-            auth = (self.jira_email, self.jira_api_key)
-            headers = {"Accept": "application/json"}
-
-            response = requests.get(url, auth=auth, headers=headers, timeout=30)
-            response.raise_for_status()
-
-            components = response.json()
-            return [comp.get("name", "") for comp in components if comp.get("name")]
-
-        except Exception as e:
-            raise ClientException(f"Failed to fetch components: {str(e)}")
-
-    def create_task(self, task_title: str, component_names: List[str]) -> Dict:
-        """Create a new JIRA task with user input."""
-        # Prepare the API endpoint for creating issues
-        url = f"{self.jira_url.rstrip('/')}/rest/api/3/issue"
-
-        # Prepare authentication
-        auth = (self.jira_email, self.jira_api_key)
-
-        # Prepare headers
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-
-        # Get account ID for assignment
-        account_id = self._get_account_id_by_email(self.jira_email)
-
-        # Prepare the issue data
-        issue_data = {
-            "fields": {
-                "project": {"key": self.jira_project_key},
-                "summary": task_title,
-                "description": {
-                    "version": 1,
-                    "type": "doc",
-                    "content": [
-                        {
-                            "type": "paragraph",
-                            "content": [
-                                {"type": "text", "text": "Task created via Jora script"}
-                            ],
-                        }
-                    ],
-                },
-                "issuetype": {"name": "Task"},  # Default issue type
-                "assignee": {"accountId": account_id},
+        query = """
+        query {
+            viewer {
+                id
             }
         }
+        """
 
-        # Add components if specified
-        if component_names:
-            issue_data["fields"]["components"] = [
-                {"name": name} for name in component_names
-            ]
+        result = self._make_graphql_request(query)
+        viewer_id = result.get("viewer", {}).get("id")
+        if not viewer_id:
+            raise ClientException("Could not get viewer ID from Linear")
+        return viewer_id
+
+    def get_team_labels(self) -> List[Dict]:
+        """Get all labels for the team."""
+        query = """
+        query TeamLabels($teamId: String!) {
+            team(id: $teamId) {
+                labels {
+                    nodes {
+                        id
+                        name
+                        color
+                    }
+                }
+            }
+        }
+        """
 
         try:
-            # Make the API request
-            response = requests.post(
-                url, auth=auth, headers=headers, data=json.dumps(issue_data), timeout=30
-            )
+            result = self._make_graphql_request(query, {"teamId": self.linear_team_id})
+            return result.get("team", {}).get("labels", {}).get("nodes", [])
+        except Exception as e:
+            raise ClientException(f"Failed to fetch team labels: {str(e)}")
 
-            # Check if request was successful
-            if response.status_code == 201:
-                created_task = response.json()
-                return created_task
-            else:
-                error_msg = (
-                    f"Failed to create task. Status: {response.status_code}, "
-                    f"Response: {response.text}"
-                )
-                # If component-related error, provide helpful message
-                if component_names and "component" in response.text.lower():
-                    error_msg += (
-                        f" (Component issue with: '{', '.join(component_names)}')"
-                    )
-                raise ClientException(error_msg)
-
-        except requests.exceptions.RequestException as e:
-            raise ClientException(f"Failed to create JIRA task: {str(e)}")
-
-    def _fetch_jira_tasks_only(self) -> Dict:
+    def get_team_projects(self) -> List[Dict]:
+        """Get all projects for the team."""
+        query = """
+        query TeamProjects($teamId: String!) {
+            team(id: $teamId) {
+                projects {
+                    nodes {
+                        id
+                        name
+                        description
+                        state
+                    }
+                }
+            }
+        }
         """
-        Fetch only JIRA tasks without PR enrichment (for concurrent execution).
 
-        Returns:
-            dict: Raw JIRA search results
+        try:
+            result = self._make_graphql_request(query, {"teamId": self.linear_team_id})
+            projects = result.get("team", {}).get("projects", {}).get("nodes", [])
+            # Filter out completed/canceled projects
+            return [
+                p for p in projects if p.get("state") not in ["completed", "canceled"]
+            ]
+        except Exception as e:
+            raise ClientException(f"Failed to fetch team projects: {str(e)}")
+
+    def create_task(
+        self,
+        task_title: str,
+        label_ids: List[str] = None,
+        priority: int = None,
+        project_id: str = None,
+    ) -> Dict:
+        """Create a new Linear task with optional labels, priority, and project.
+
+        Args:
+            task_title: The title of the task
+            label_ids: Optional list of label IDs to add to the task
+            priority: Optional priority (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low)
+            project_id: Optional project ID to add the task to
         """
-        # Get account ID for the search
-        account_id = self._get_account_id_by_email(self.jira_email)
+        # Get current user's ID to assign the task to them
+        viewer_id = self.get_viewer_id()
 
-        # Prepare the API endpoint for search (v3)
-        url = f"{self.jira_url.rstrip('/')}/rest/api/3/search/jql"
-
-        # Prepare authentication
-        auth = (self.jira_email, self.jira_api_key)
-
-        # Prepare headers
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-
-        # Build JQL query for incomplete tasks
-        # Create the status exclusion part of the query
-        status_exclusion = " AND ".join(
-            [f'status != "{status}"' for status in self.EXCLUDED_STATUSES]
-        )
-
-        jql = f'assignee = "{account_id}" AND {status_exclusion} ORDER BY updated DESC'
-
-        # Prepare query parameters for v3 GET request
-        params = {
-            "jql": jql,
-            "maxResults": self.MAX_RESULTS,
-            "fields": "key,summary,status,priority",
-            "startAt": 0,
-            "expand": "changelog",
+        # Build the input object
+        input_fields = {
+            "teamId": self.linear_team_id,
+            "title": task_title,
+            "assigneeId": viewer_id,  # Assign to current user
         }
 
-        # Make the API request using GET instead of POST for v3
-        response = requests.get(
-            url,
-            auth=auth,
-            headers=headers,
-            params=params,
-            timeout=30,
-        )
+        # Only add labelIds if we have labels (don't send empty array)
+        if label_ids and len(label_ids) > 0:
+            input_fields["labelIds"] = label_ids
 
-        # Check if request was successful
-        response.raise_for_status()
+        # Only add priority if it's set
+        if priority is not None:
+            input_fields["priority"] = priority
 
-        # Get the search results
-        return response.json()
+        # Add project if specified
+        if project_id:
+            input_fields["projectId"] = project_id
+
+        mutation = """
+        mutation IssueCreate($input: IssueCreateInput!) {
+            issueCreate(input: $input) {
+                success
+                issue {
+                    id
+                    identifier
+                    title
+                    url
+                }
+            }
+        }
+        """
+
+        variables = {"input": input_fields}
+
+        try:
+            result = self._make_graphql_request(mutation, variables)
+            if not result.get("issueCreate", {}).get("success"):
+                raise ClientException("Failed to create Linear issue")
+
+            return result.get("issueCreate", {}).get("issue", {})
+        except Exception as e:
+            # Add more debug info
+            raise ClientException(
+                f"Failed to create Linear task: {str(e)}. Input: {input_fields}"
+            )
+
+    def _fetch_linear_tasks_only(self) -> Dict:
+        """
+        Fetch only Linear tasks without PR enrichment (for concurrent execution).
+
+        Returns:
+            dict: Raw Linear search results
+        """
+        query = """
+        {
+            viewer {
+                assignedIssues(
+                    first: 50
+                    orderBy: updatedAt
+                    filter: {
+                        state: { type: { nin: ["completed", "canceled"] } }
+                    }
+                ) {
+                    nodes {
+                        id
+                        identifier
+                        title
+                        state {
+                            name
+                            type
+                        }
+                        priority
+                        priorityLabel
+                        url
+                        updatedAt
+                    }
+                }
+            }
+        }
+        """
+
+        result = self._make_graphql_request(query)
+        return {
+            "issues": result.get("viewer", {})
+            .get("assignedIssues", {})
+            .get("nodes", [])
+        }
 
     def get_task_by_key(self, task_key: str) -> Dict:
         """
-        Fetch a single JIRA task by its key.
+        Fetch a single Linear task by its identifier.
 
         Args:
-            task_key (str): The JIRA task key (e.g., "ABC-123")
+            task_key (str): The Linear task identifier (e.g., "ABC-123")
 
         Returns:
-            dict: JIRA task data
+            dict: Linear task data
         """
-        # Prepare the API endpoint for getting an issue
-        url = f"{self.jira_url.rstrip('/')}/rest/api/3/issue/{task_key}"
-
-        # Prepare authentication
-        auth = (self.jira_email, self.jira_api_key)
-
-        # Prepare headers
-        headers = {"Accept": "application/json"}
+        query = """
+        query GetIssue($id: String!) {
+            issue(id: $id) {
+                id
+                identifier
+                title
+                description
+                state {
+                    name
+                }
+                priority
+                priorityLabel
+                url
+                updatedAt
+            }
+        }
+        """
 
         try:
-            # Make the API request
-            response = requests.get(
-                url,
-                auth=auth,
-                headers=headers,
-                timeout=30,
-            )
-
-            # Check if request was successful
-            response.raise_for_status()
-
-            # Get the task data
-            return response.json()
-
-        except requests.exceptions.RequestException as e:
+            result = self._make_graphql_request(query, {"id": task_key})
+            issue = result.get("issue")
+            if not issue:
+                raise ClientException(f"Task {task_key} not found")
+            return issue
+        except Exception as e:
             raise ClientException(f"Failed to fetch task {task_key}: {str(e)}")
-
-    def get_task_comments(self, task_key: str) -> List[Dict]:
-        """
-        Fetch all comments for a JIRA task.
-
-        Args:
-            task_key (str): The JIRA task key (e.g., "ABC-123")
-
-        Returns:
-            list: List of comment data from JIRA API
-        """
-        # Prepare the API endpoint for getting task comments
-        url = f"{self.jira_url.rstrip('/')}/rest/api/3/issue/{task_key}/comment"
-
-        # Prepare authentication
-        auth = (self.jira_email, self.jira_api_key)
-
-        # Prepare headers
-        headers = {"Accept": "application/json"}
-
-        try:
-            # Make the API request
-            response = requests.get(
-                url,
-                auth=auth,
-                headers=headers,
-                timeout=30,
-            )
-
-            # Check if request was successful
-            response.raise_for_status()
-
-            # Get the comments data
-            result = response.json()
-            return result.get("comments", [])
-
-        except requests.exceptions.RequestException as e:
-            raise ClientException(
-                f"Failed to fetch comments for task {task_key}: {str(e)}"
-            )
-
-    @staticmethod
-    def extract_adf_content(adf_description: dict) -> tuple[str, list[str]]:
-        """
-        Extract plain text and media URLs from JIRA's Atlassian Document Format (ADF).
-
-        Args:
-            adf_description (dict): ADF formatted description from JIRA API
-
-        Returns:
-            tuple: (description_text, list_of_media_urls)
-        """
-        if not adf_description or not isinstance(adf_description, dict):
-            return "", []
-
-        text_parts = []
-        media_urls = []
-
-        def extract_recursive(content):
-            """Recursively extract text and media from ADF content."""
-            if isinstance(content, dict):
-                node_type = content.get("type", "")
-
-                # Extract text nodes
-                if node_type == "text":
-                    text_parts.append(content.get("text", ""))
-
-                # Extract media nodes (images, files, etc.)
-                elif node_type in ("media", "mediaInline", "mediaSingle"):
-                    attrs = content.get("attrs", {})
-                    # Media nodes can have 'id' for attachments or direct 'url'
-                    media_id = attrs.get("id")
-                    if media_id:
-                        # For JIRA Cloud, construct attachment URL
-                        # Note: The actual URL construction depends on your JIRA setup
-                        media_urls.append(f"attachment:{media_id}")
-                    elif attrs.get("url"):
-                        media_urls.append(attrs["url"])
-
-                # Recurse into nested content
-                if "content" in content:
-                    for child in content["content"]:
-                        extract_recursive(child)
-
-            elif isinstance(content, list):
-                for item in content:
-                    extract_recursive(item)
-
-        extract_recursive(adf_description)
-        return " ".join(text_parts).strip(), media_urls
-
-    def get_jira_comments_context(self, task_key: str) -> str:
-        """
-        Get formatted context for Jira task comments and description.
-
-        Args:
-            task_key (str): The JIRA task key
-
-        Returns:
-            str: Formatted context including task description and comments
-        """
-        try:
-            # Fetch task details and comments
-            task = self.get_task_by_key(task_key)
-            comments = self.get_task_comments(task_key)
-
-            task_summary = task.get("fields", {}).get("summary", "No summary")
-            task_description = task.get("fields", {}).get("description", {})
-
-            # Extract description text
-            description_text, _ = self.extract_adf_content(task_description)
-
-            # Build context
-            context = f"**JIRA Task: {task_key}**\n"
-            context += f"**Summary:** {task_summary}\n\n"
-
-            if description_text:
-                context += f"**Description:**\n{description_text}\n\n"
-
-            if comments:
-                context += "**Comments:**\n"
-                for i, comment in enumerate(comments, 1):
-                    author = comment.get("author", {}).get("displayName", "Unknown")
-                    created = comment.get("created", "Unknown date")
-                    body = comment.get("body", {})
-
-                    # Extract comment text from ADF format
-                    comment_text, _ = self.extract_adf_content(body)
-
-                    if comment_text:
-                        context += f"{i}. **{author}** ({created}):\n{comment_text}\n\n"
-
-            return context
-
-        except ClientException:
-            # If we can't fetch Jira data, return empty context
-            return ""
-
-    def get_task_context(self, task_key: Optional[str] = None) -> str:
-        """Generate task context string with summary, description, and attachments.
-
-        Args:
-            task_key (str, optional): The JIRA task key. If not provided, uses current branch task.
-
-        Returns:
-            Formatted string containing task information
-        """
-        # Get task key from current branch if not provided
-        if not task_key:
-            task_key = self.get_current_task_key()
-
-        # Fetch task details
-        task = self.get_task_by_key(task_key)
-
-        # Extract task information
-        task_summary = task.get("fields", {}).get("summary", "No summary")
-        task_description = task.get("fields", {}).get("description", {})
-
-        # Extract description text and media URLs
-        description_text, media_urls = self.extract_adf_content(task_description)
-
-        # Build task context
-        context = f"**Task:** {task_key}\n" f"**Summary:** {task_summary}\n\n"
-
-        if description_text:
-            context += f"**Description:**\n{description_text}\n\n"
-
-        if media_urls:
-            context += "**Images/Attachments:**\n"
-            for i, url in enumerate(media_urls, 1):
-                context += f"{i}. {url}\n"
-            context += "\n"
-
-        return context
-
-    def get_cache_timestamp_formatted(self) -> Optional[str]:
-        """Get the cache timestamp in a user-friendly format."""
-        # Get tasks data with expiration metadata to calculate insertion time
-        result = self.cache.get("tasks_data", expire_time=True)
-        if not result or result[0] is None:
-            return None
-
-        _, expire_time = result
-        # Check if expire_time is None (cache entry without expiration)
-        if expire_time is None:
-            return None
-
-        # Calculate insertion time by subtracting TTL from expiration time
-        store_time = datetime.fromtimestamp(expire_time - self.CACHE_TTL_SECONDS)
-        return f"Updated {humanize.naturaltime(store_time)}"
 
     def fetch_my_incomplete_tasks(self, force_refresh: bool = False) -> Dict:
         """
-        Fetch incomplete JIRA tasks assigned to the authenticated user and enrich with PR information.
+        Fetch incomplete Linear tasks assigned to the authenticated user and enrich with PR information.
         Uses disk cache for persistent memoization with force_refresh option.
 
         Args:
             force_refresh (bool): If True, clear cache and fetch fresh data
 
         Returns:
-            dict: JIRA search results with tasks enriched with PR information
+            dict: Linear search results with tasks enriched with PR information
         """
         # Clear the cache if force refresh is requested
         if force_refresh:
@@ -1016,19 +928,19 @@ class JoraClient:
         fetch_time = datetime.now()
 
         try:
-            # Use ThreadPoolExecutor to fetch JIRA and GitHub data concurrently
+            # Use ThreadPoolExecutor to fetch Linear and GitHub data concurrently
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 # Submit both tasks concurrently
-                jira_future = executor.submit(self._fetch_jira_tasks_only)
+                linear_future = executor.submit(self._fetch_linear_tasks_only)
                 pr_future = executor.submit(self._fetch_all_prs)
 
                 # Wait for both to complete and get results
                 try:
-                    jira_results = jira_future.result(
+                    linear_results = linear_future.result(
                         timeout=35
-                    )  # JIRA has 30s timeout + buffer
+                    )  # Linear has 30s timeout + buffer
                 except Exception as e:
-                    raise ClientException(f"Failed to fetch JIRA tasks: {str(e)}")
+                    raise ClientException(f"Failed to fetch Linear tasks: {str(e)}")
 
                 try:
                     all_prs = pr_future.result(timeout=15)  # PR fetch timeout + buffer
@@ -1036,9 +948,9 @@ class JoraClient:
                     all_prs = []  # Continue without PR data if GitHub fails
 
             # Enrich each task with PR information
-            issues = jira_results.get("issues", [])
+            issues = linear_results.get("issues", [])
             for task in issues:
-                task_key = task.get("key", "")
+                task_key = task.get("identifier", "")
                 pr_info = self._find_pr_by_content(task_key, all_prs)
                 # Add PR information to the task
                 if pr_info:
@@ -1056,240 +968,13 @@ class JoraClient:
             issues.sort(key=self._get_pr_sort_priority)
 
             # Cache the results with 1 day expiration
-            self.cache.set("tasks_data", jira_results, expire=self.CACHE_TTL_SECONDS)
+            self.cache.set("tasks_data", linear_results, expire=self.CACHE_TTL_SECONDS)
 
             # Return the enriched and sorted search results
-            return jira_results
+            return linear_results
 
         except requests.exceptions.RequestException as e:
-            raise ClientException(f"Failed to fetch JIRA tasks: {str(e)}")
-
-    def get_repository_assignees(self) -> List[Dict]:
-        """
-        Get repository assignees (users who can be assigned to PRs/issues) using GitHub CLI.
-        Uses the assignees endpoint which is more appropriate than collaborators for PR assignment.
-
-        Returns:
-            List of assignee dictionaries from GitHub API
-        """
-        try:
-            # Use assignees endpoint instead of collaborators - this returns users who can be assigned to PRs
-            result = subprocess.run(
-                ["gh", "api", "repos/{owner}/{repo}/assignees", "--paginate"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=15,  # Increased timeout for paginated requests
-            )
-
-            if result.stdout.strip():
-                import json
-
-                return json.loads(result.stdout)
-            return []
-
-        except subprocess.CalledProcessError as e:
-            raise ClientException(f"Failed to fetch repository assignees: {str(e)}")
-        except json.JSONDecodeError as e:
-            raise ClientException(f"Failed to parse assignees response: {str(e)}")
-        except Exception as e:
-            raise ClientException(f"Unexpected error fetching assignees: {str(e)}")
-
-    def assign_users_to_pr(self, usernames: List[str]) -> None:
-        """
-        Assign users to the current PR using GitHub API.
-        Computes the diff and only makes necessary API calls.
-
-        Args:
-            usernames: List of GitHub usernames to assign to the PR (empty list = clear all)
-        """
-        try:
-            # Get PR number and current assignees
-            result = subprocess.run(
-                ["gh", "pr", "view", "--json", "number,assignees"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=10,
-            )
-
-            if result.stdout.strip():
-                import json
-
-                pr_data = json.loads(result.stdout)
-                pr_number = pr_data.get("number")
-
-                if pr_number:
-                    # Get current assignees
-                    current_assignees = [
-                        assignee.get("login", "")
-                        for assignee in pr_data.get("assignees", [])
-                        if assignee.get("login", "")
-                    ]
-
-                    # Convert to sets for easy diff calculation
-                    current_set = set(current_assignees)
-                    target_set = set(usernames)
-
-                    # Calculate what needs to be added and removed
-                    to_add = target_set - current_set
-                    to_remove = current_set - target_set
-
-                    # Only make API calls if there are actual changes
-                    if not to_add and not to_remove:
-                        return  # No changes needed
-
-                    # Remove assignees that are no longer wanted
-                    if to_remove:
-                        remove_cmd = [
-                            "gh",
-                            "api",
-                            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/assignees",
-                            "-X",
-                            "DELETE",
-                        ]
-                        for username in to_remove:
-                            remove_cmd.extend(["-f", f"assignees[]={username}"])
-
-                        result = subprocess.run(
-                            remove_cmd, capture_output=True, text=True, timeout=10
-                        )
-
-                        if result.returncode != 0:
-                            error_msg = (
-                                result.stderr.strip()
-                                if result.stderr
-                                else "Unknown error"
-                            )
-                            raise ClientException(
-                                f"Failed to remove assignees: {error_msg}"
-                            )
-
-                    # Add new assignees
-                    if to_add:
-                        add_cmd = [
-                            "gh",
-                            "api",
-                            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/assignees",
-                            "-X",
-                            "POST",
-                        ]
-                        for username in to_add:
-                            add_cmd.extend(["-f", f"assignees[]={username}"])
-
-                        result = subprocess.run(
-                            add_cmd, capture_output=True, text=True, timeout=10
-                        )
-
-                        if result.returncode != 0:
-                            error_msg = (
-                                result.stderr.strip()
-                                if result.stderr
-                                else "Unknown error"
-                            )
-                            raise ClientException(
-                                f"Failed to add assignees: {error_msg}"
-                            )
-                else:
-                    raise ClientException("Could not determine PR number")
-            else:
-                raise ClientException("Could not get PR information")
-
-        except subprocess.CalledProcessError as e:
-            raise ClientException(f"Failed to update PR assignees: {str(e)}")
-        except json.JSONDecodeError as e:
-            raise ClientException(f"Failed to parse PR data: {str(e)}")
-        except Exception as e:
-            raise ClientException(f"Unexpected error updating assignees: {str(e)}")
-
-    def get_current_pr_assignees(self) -> List[str]:
-        """
-        Get current assignees for the PR.
-
-        Returns:
-            List of usernames currently assigned to the PR
-        """
-        try:
-            result = subprocess.run(
-                ["gh", "pr", "view", "--json", "assignees"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=10,
-            )
-
-            if result.stdout.strip():
-                import json
-
-                pr_data = json.loads(result.stdout)
-                return [
-                    assignee.get("login", "")
-                    for assignee in pr_data.get("assignees", [])
-                    if assignee.get("login", "")
-                ]
-            return []
-
-        except subprocess.CalledProcessError as e:
-            raise ClientException(f"Failed to get current assignees: {str(e)}")
-        except json.JSONDecodeError as e:
-            raise ClientException(f"Failed to parse assignees data: {str(e)}")
-        except Exception as e:
-            raise ClientException(f"Unexpected error getting assignees: {str(e)}")
-
-    def add_deploy_label_to_pr(self) -> None:
-        """
-        Add a deploy label to the current PR using GitHub API.
-        """
-        try:
-            # Get PR number
-            result = subprocess.run(
-                ["gh", "pr", "view", "--json", "number"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=10,
-            )
-
-            if result.stdout.strip():
-                pr_data = json.loads(result.stdout)
-                pr_number = pr_data.get("number")
-
-                if pr_number:
-                    # Add deploy label using GitHub API
-                    subprocess.run(
-                        [
-                            "gh",
-                            "api",
-                            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/labels",
-                            "-X",
-                            "POST",
-                            "-f",
-                            "labels[]=deploy",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        timeout=10,
-                    )
-                else:
-                    raise ClientException("Could not determine PR number")
-            else:
-                raise ClientException("Could not get PR information")
-
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if e.stderr else str(e)
-            # Check if the error is about label not existing
-            if "Label does not exist" in error_msg or "Not Found" in error_msg:
-                raise ClientException(
-                    "Label 'deploy' does not exist in this repository. "
-                    "Create it first at: https://github.com/{owner}/{repo}/labels"
-                )
-            else:
-                raise ClientException(f"Failed to add deploy label: {error_msg}")
-        except json.JSONDecodeError as e:
-            raise ClientException(f"Failed to parse PR data: {str(e)}")
-        except Exception as e:
-            raise ClientException(f"Unexpected error adding deploy label: {str(e)}")
+            raise ClientException(f"Failed to fetch Linear tasks: {str(e)}")
 
     def get_current_pr_url(self) -> str:
         """
