@@ -23,7 +23,7 @@ CYAN = "\033[36m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 SPINNER = r"-\|/"
-_PREFIX = 16  # visible chars before title: "> ● ■ LTXD-408  "
+_PREFIX = 16  # visible chars before title: "> ● ● LTXD-408  "
 
 # -- Shell init (jora init <shell>) ------------------------------------------
 
@@ -41,14 +41,17 @@ _SUPPORTED_SHELLS = ("zsh", "bash")
 # -- Formatting ---------------------------------------------------------------
 
 
+def _dot(color_map: Dict[str, str], status: str) -> str:
+    color = color_map.get(status)
+    return f"{color}●{RESET}" if color else f"{DIM}○{RESET}"
+
+
 def _pr_indicators(prs: List[Dict]) -> str:
-    """Review ● and CI ■ status for the first matching PR."""
     if not prs:
         return "   "
-    review = analyze_reviews(prs[0].get("reviews", []))
-    ci = analyze_ci(prs[0].get("statusCheckRollup", []))
-    rv = {"APPROVED": f"{GREEN}●{RESET}", "CHANGES_REQUESTED": f"{RED}●{RESET}"}.get(review, f"{DIM}○{RESET}")
-    ck = {"SUCCESS": f"{GREEN}■{RESET}", "FAILURE": f"{RED}■{RESET}", "PENDING": f"{YELLOW}■{RESET}"}.get(ci, f"{DIM}□{RESET}")
+    pr = prs[0]
+    rv = _dot({"APPROVED": GREEN, "CHANGES_REQUESTED": RED}, analyze_reviews(pr.get("reviews", [])))
+    ck = _dot({"SUCCESS": GREEN, "FAILURE": RED, "PENDING": YELLOW}, analyze_ci(pr.get("statusCheckRollup", [])))
     return f"{rv} {ck}"
 
 
