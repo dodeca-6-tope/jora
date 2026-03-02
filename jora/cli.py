@@ -21,6 +21,7 @@ RED = "\033[31m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
 BOLD = "\033[1m"
+BG_YELLOW = "\033[103m"
 RESET = "\033[0m"
 SPINNER = r"-\|/"
 _PREFIX = 16  # visible chars before title: "> ● ● LTXD-408  "
@@ -58,7 +59,7 @@ def _pr_indicators(prs: List[Dict]) -> str:
 def _format_task(task: Dict, prs: List[Dict], selected: bool, active: bool) -> str:
     """Single task line: cursor, PR indicators, identifier, title."""
     ident_raw = task["identifier"][:9]
-    ident = f"{CYAN}{ident_raw:<9}{RESET}" if active else f"{DIM}{ident_raw:<9}{RESET}"
+    ident = f"{BG_YELLOW}{ident_raw}{RESET}{'':<{9 - len(ident_raw)}}" if active else f"{DIM}{ident_raw:<9}{RESET}"
     title = task.get("title", "No title")
     avail = os.get_terminal_size().columns - _PREFIX
     if avail > 3 and len(title) > avail:
