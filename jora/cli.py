@@ -21,8 +21,8 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 SPINNER = r"-\|/"
 
-# Visible chars before title: "  > ● ■ LTXD-408  "
-_PREFIX = 18
+# Visible chars before title: "> ● ■ LTXD-408  "
+_PREFIX = 16
 
 
 def _indicators(prs: List[Dict]) -> str:
@@ -43,7 +43,7 @@ def _format_task(task: Dict, prs: List[Dict], selected: bool, active: bool) -> s
     if avail > 3 and len(title) > avail:
         title = title[: avail - 3] + "..."
     cur = f"{CYAN}>{RESET}" if selected else " "
-    return f"  {cur} {_indicators(prs)} {ident} {title}"
+    return f"{cur} {_indicators(prs)} {ident} {title}"
 
 
 def _pr_sort_key(task: Dict, prs_by_task: Dict) -> int:
@@ -63,8 +63,8 @@ def _draw(tasks, prs_by_task, cursor, active_key="", message="", spin_frame=-1):
         print(_format_task(task, prs_by_task.get(task["identifier"], []), i == cursor, active))
     print()
     if message:
-        print(f"  {message}\n")
-    print(f"  {DIM}enter switch  o open  p PR  r refresh  q quit{RESET}")
+        print(f"{message}\n")
+    print(f"{DIM}⏎ switch · o open · p PR · r refresh · q quit{RESET}")
 
 
 def main():
@@ -153,8 +153,8 @@ def main():
             s = 0
             while t.is_alive():
                 s += 1
-                _draw(tasks, prs_by_task, cursor, active_key,
-                      f"Switching to {task_id}... {SPINNER[s // 4 % len(SPINNER)]}")
+                term.clear()
+                print(f"Switching to {task_id} {SPINNER[s // 4 % len(SPINNER)]}")
                 t.join(timeout=1 / 60)
 
             if result[0]:
