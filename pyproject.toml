@@ -1,0 +1,16 @@
+[project]
+name = "jora"
+version = "0.1.0"
+description = "Linear task manager CLI"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "python-dotenv",
+]
+
+[project.scripts]
+jora = "jora.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
