@@ -1,12 +1,8 @@
 import os
-import subprocess
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
-
-from jora.exceptions import ClientException
 
 
 LINEAR_API_URL = "https://api.linear.app/graphql"
@@ -15,8 +11,7 @@ LINEAR_API_URL = "https://api.linear.app/graphql"
 class LinearClient:
     def __init__(self):
         from jora.git import get_repo_root
-        repo_root = get_repo_root()
-        load_dotenv(repo_root / ".env")
+        load_dotenv(get_repo_root() / ".env")
 
         self.api_key = os.getenv("LINEAR_API_KEY")
         self.team_id = os.getenv("LINEAR_TEAM_ID")
@@ -24,14 +19,10 @@ class LinearClient:
         self.workspace = os.getenv("LINEAR_WORKSPACE")
 
         if not self.api_key:
-            raise ClientException(
-                "Missing LINEAR_API_KEY. Get one at https://linear.app/settings/api"
-            )
+            raise RuntimeError("Missing LINEAR_API_KEY. Get one at https://linear.app/settings/api")
 
         if not self.team_id and not self.team_key:
-            raise ClientException(
-                "Set either LINEAR_TEAM_ID (UUID) or LINEAR_TEAM_KEY (e.g. 'ENG')"
-            )
+            raise RuntimeError("Set either LINEAR_TEAM_ID (UUID) or LINEAR_TEAM_KEY (e.g. 'ENG')")
 
         if self.team_key and not self.team_id:
             try:
@@ -40,31 +31,25 @@ class LinearClient:
                 self.team_id = self.team_key
 
     def _graphql(self, query: str, variables: Optional[Dict] = None) -> Dict:
-        headers = {
-            "Authorization": self.api_key,
-            "Content-Type": "application/json",
-        }
+        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
         payload = {"query": query}
         if variables:
             payload["variables"] = variables
 
-        try:
-            resp = requests.post(LINEAR_API_URL, headers=headers, json=payload, timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
-            if "errors" in data:
-                msgs = [e.get("message", str(e)) for e in data["errors"]]
-                raise ClientException(f"Linear API error: {', '.join(msgs)}")
-            return data.get("data", {})
-        except requests.exceptions.RequestException as e:
-            raise ClientException(f"Failed to connect to Linear API: {e}")
+        resp = requests.post(LINEAR_API_URL, headers=headers, json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if "errors" in data:
+            msgs = [e.get("message", str(e)) for e in data["errors"]]
+            raise RuntimeError(f"Linear API error: {', '.join(msgs)}")
+        return data.get("data", {})
 
     def _get_team_id_by_key(self, team_key: str) -> str:
         result = self._graphql("{ teams { nodes { id key } } }")
         for team in result.get("teams", {}).get("nodes", []):
             if team.get("key") == team_key:
                 return team["id"]
-        raise ClientException(f"Team with key '{team_key}' not found")
+        raise RuntimeError(f"Team with key '{team_key}' not found")
 
     def fetch_tasks(self) -> List[Dict]:
         query = """

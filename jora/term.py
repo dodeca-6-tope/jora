@@ -1,7 +1,6 @@
-"""Terminal: alt screen, input, clear."""
+"""Terminal: alt screen, input, rendering."""
 
 import atexit
-import os
 import select
 import sys
 import termios
@@ -31,11 +30,6 @@ def cleanup():
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, _saved)
 
 
-def clear():
-    sys.stdout.write("\033[2J\033[H")
-    sys.stdout.flush()
-
-
 def readkey() -> str:
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -55,3 +49,13 @@ def readkey() -> str:
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def render(lines: list[str]):
+    """Overwrite screen in place (flicker-free)."""
+    buf = "\033[H"
+    for line in lines:
+        buf += line + "\033[K\n"
+    buf += "\033[J"
+    sys.stdout.write(buf)
+    sys.stdout.flush()

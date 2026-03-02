@@ -15,17 +15,13 @@ def get_repo_root() -> Path:
         return Path.cwd()
 
 
-def _repo_name() -> str:
-    return get_repo_root().name
-
-
-def worktree_path(task_key: str) -> Path:
-    return Path.home() / ".jora" / "worktrees" / _repo_name() / task_key.lower()
+def _worktree_dir(task_key: str) -> Path:
+    return Path.home() / ".jora" / "worktrees" / get_repo_root().name / task_key.lower()
 
 
 def _find_existing_worktree(task_key: str) -> Optional[Path]:
     """Find a worktree for this task — by directory name or branch name."""
-    wt = worktree_path(task_key)
+    wt = _worktree_dir(task_key)
     if wt.exists():
         return wt
 
@@ -50,7 +46,7 @@ def switch_to_task(task_key: str) -> Path:
     if existing:
         return existing
 
-    wt = worktree_path(task_key)
+    wt = _worktree_dir(task_key)
     branch = f"feature/{task_key.lower()}"
     wt.parent.mkdir(parents=True, exist_ok=True)
 
@@ -59,7 +55,6 @@ def switch_to_task(task_key: str) -> Path:
         capture_output=True, text=True,
     ).returncode == 0
 
-    # Always create from latest develop
     subprocess.run(["git", "fetch", "origin", "develop"], capture_output=True, check=True)
 
     if branch_exists:
