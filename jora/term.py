@@ -8,17 +8,23 @@ import termios
 import tty
 
 _saved = None
+_active = False
 
 
 def init():
-    global _saved
+    global _saved, _active
     _saved = termios.tcgetattr(sys.stdin)
+    _active = True
     sys.stdout.write("\033[?1049h\033[?25l")
     sys.stdout.flush()
     atexit.register(cleanup)
 
 
 def cleanup():
+    global _active
+    if not _active:
+        return
+    _active = False
     sys.stdout.write("\033[?25h\033[?1049l")
     sys.stdout.flush()
     if _saved:

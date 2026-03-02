@@ -55,9 +55,12 @@ def switch_to_task(task_key: str) -> Path:
         capture_output=True, text=True,
     ).returncode == 0
 
+    # Always create from latest develop
+    subprocess.run(["git", "fetch", "origin", "develop"], capture_output=True, check=True)
+
     if branch_exists:
-        subprocess.run(["git", "worktree", "add", str(wt), branch], check=True)
+        subprocess.run(["git", "worktree", "add", str(wt), branch], capture_output=True, check=True)
     else:
-        subprocess.run(["git", "worktree", "add", str(wt), "-b", branch, "develop"], check=True)
+        subprocess.run(["git", "worktree", "add", str(wt), "-b", branch, "origin/develop"], capture_output=True, check=True)
 
     return wt

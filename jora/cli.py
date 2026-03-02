@@ -3,6 +3,7 @@ import subprocess
 import sys
 import threading
 import webbrowser
+from pathlib import Path
 from typing import Dict, List
 
 from jora.exceptions import ClientException
@@ -34,8 +35,9 @@ def _indicators(prs: List[Dict]) -> str:
     return f"{rv} {ck}"
 
 
-def _format_task(task: Dict, prs: List[Dict], selected: bool) -> str:
-    ident = f"{DIM}{task['identifier'][:9]:<9}{RESET}"
+def _format_task(task: Dict, prs: List[Dict], selected: bool, active: bool) -> str:
+    ident_raw = task['identifier'][:9]
+    ident = f"{CYAN}{ident_raw:<9}{RESET}" if active else f"{DIM}{ident_raw:<9}{RESET}"
     title = task.get("title", "No title")
     avail = os.get_terminal_size().columns - _PREFIX
     if avail > 3 and len(title) > avail:
@@ -52,12 +54,13 @@ def _pr_sort_key(task: Dict, prs_by_task: Dict) -> int:
     return {"APPROVED": 0, "CHANGES_REQUESTED": 1, "REVIEW_REQUIRED": 1}.get(status, 2)
 
 
-def _draw(tasks, prs_by_task, cursor, message="", spin_frame=-1):
+def _draw(tasks, prs_by_task, cursor, active_key="", message="", spin_frame=-1):
     term.clear()
     spinner = f" {DIM}{SPINNER[spin_frame % len(SPINNER)]}{RESET}" if spin_frame >= 0 else ""
     print(f"{BOLD}Jora{RESET} — {len(tasks)} tasks{spinner}\n")
     for i, task in enumerate(tasks):
-        print(_format_task(task, prs_by_task.get(task["identifier"], []), i == cursor))
+        active = task["identifier"].lower() == active_key
+        print(_format_task(task, prs_by_task.get(task["identifier"], []), i == cursor, active))
     print()
     if message:
         print(f"  {message}\n")
@@ -72,6 +75,10 @@ def main():
         sys.exit(1)
 
     term.init()
+
+    # Detect active task from cwd (if in a worktree)
+    cwd = Path.cwd()
+    active_key = cwd.name if ".worktrees" in cwd.parts else ""
 
     try:
         tasks = linear.fetch_tasks()
@@ -111,7 +118,7 @@ def main():
         if loading:
             spin += 1
 
-        _draw(tasks, prs_by_task, cursor, message, spin_frame=spin // 4 if loading else -1)
+        _draw(tasks, prs_by_task, cursor, active_key, message, spin_frame=spin // 4 if loading else -1)
         message = ""
 
         try:
@@ -131,13 +138,31 @@ def main():
         elif key == "down":
             cursor = min(len(tasks) - 1, cursor + 1)
         elif key in ("enter", "s"):
-            try:
-                wt = switch_to_task(tasks[cursor]["identifier"])
+            task_id = tasks[cursor]["identifier"]
+            result = [None]
+            error = [None]
+
+            def do_switch():
+                try:
+                    result[0] = switch_to_task(task_id)
+                except subprocess.CalledProcessError as e:
+                    error[0] = str(e)
+
+            t = threading.Thread(target=do_switch, daemon=True)
+            t.start()
+            s = 0
+            while t.is_alive():
+                s += 1
+                _draw(tasks, prs_by_task, cursor, active_key,
+                      f"Switching to {task_id}... {SPINNER[s // 4 % len(SPINNER)]}")
+                t.join(timeout=1 / 60)
+
+            if result[0]:
                 term.cleanup()
-                print(f"cd {wt}")
+                Path("/tmp/jora_cd").write_text(str(result[0]))
                 return
-            except subprocess.CalledProcessError as e:
-                message = f"Error: {e}"
+            else:
+                message = f"Error: {error[0]}"
         elif key == "o":
             tk = tasks[cursor]["identifier"]
             ws = linear.workspace
@@ -149,7 +174,7 @@ def main():
             else:
                 message = "No PR for this task"
         elif key == "r":
-            _draw(tasks, prs_by_task, cursor, "Refreshing...")
+            _draw(tasks, prs_by_task, cursor, active_key, "Refreshing...")
             try:
                 tasks = linear.fetch_tasks()
                 prs_by_task = {}
