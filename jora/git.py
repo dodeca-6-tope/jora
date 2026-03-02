@@ -15,8 +15,12 @@ def get_repo_root() -> Path:
         return Path.cwd()
 
 
+def _repo_name() -> str:
+    return get_repo_root().name
+
+
 def worktree_path(task_key: str) -> Path:
-    return get_repo_root() / ".worktrees" / task_key.lower()
+    return Path.home() / ".jora" / "worktrees" / _repo_name() / task_key.lower()
 
 
 def _find_existing_worktree(task_key: str) -> Optional[Path]:

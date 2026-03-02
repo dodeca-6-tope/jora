@@ -9,6 +9,7 @@ Each task gets its own git worktree — switch between tasks without stashing or
 ```bash
 git clone <repo> jora && cd jora
 uv tool install . --editable
+eval "$(jora init zsh)"  # add to .zshrc (or: jora init zsh > ~/.oh-my-zsh/custom/jora.zsh)
 ```
 
 Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/) (`brew install uv gh && gh auth login`).
@@ -31,15 +32,15 @@ LINEAR_WORKSPACE=your-workspace-name
 jora
 ```
 
-That's it. Shows your tasks, PR status, and CI status.
+Shows your tasks, PR status, and CI status. Pick a task to switch into its worktree.
 
-| Key     | Action                        |
-| ------- | ----------------------------- |
-| ↑/↓     | Navigate                      |
-| enter   | Switch to task (worktree)     |
-| o       | Open task in Linear           |
-| p       | Open PR in browser            |
-| r       | Refresh                       |
-| q / esc | Quit                          |
+| Key     | Action                    |
+| ------- | ------------------------- |
+| ↑/↓     | Navigate                  |
+| enter   | Switch to task (worktree) |
+| o       | Open task in Linear       |
+| p       | Open PR in browser        |
+| r       | Refresh                   |
+| q / esc | Quit                      |
 
-Worktrees are created at `.worktrees/<task-key>/` inside your repo.
+Worktrees are created at `~/.jora/worktrees/<repo>/<task-key>/`.

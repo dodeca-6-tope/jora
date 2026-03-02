@@ -67,7 +67,28 @@ def _draw(tasks, prs_by_task, cursor, active_key="", message="", spin_frame=-1):
     print(f"{DIM}⏎ switch · o open · p PR · r refresh · q quit{RESET}")
 
 
+_SHELL_INIT = """\
+jora() {
+  command jora "$@"
+  if [[ -f /tmp/jora_cd ]]; then
+    cd "$(cat /tmp/jora_cd)"
+    rm /tmp/jora_cd
+  fi
+}
+"""
+
+_SUPPORTED_SHELLS = ("zsh", "bash")
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "init":
+        shell = sys.argv[2] if len(sys.argv) > 2 else None
+        if shell not in _SUPPORTED_SHELLS:
+            print(f"Usage: jora init <{'|'.join(_SUPPORTED_SHELLS)}>", file=sys.stderr)
+            sys.exit(1)
+        print(_SHELL_INIT)
+        return
+
     try:
         linear = LinearClient()
     except ClientException as e:
@@ -76,9 +97,10 @@ def main():
 
     term.init()
 
-    # Detect active task from cwd (if in a worktree)
+    # Detect active task from cwd (if in a jora worktree)
     cwd = Path.cwd()
-    active_key = cwd.name if ".worktrees" in cwd.parts else ""
+    jora_wt_dir = Path.home() / ".jora" / "worktrees"
+    active_key = cwd.name if str(cwd).startswith(str(jora_wt_dir)) else ""
 
     try:
         tasks = linear.fetch_tasks()
