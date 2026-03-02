@@ -1,50 +1,45 @@
-# JORA (Linear Task Manager)
+# Jora
 
-**TL;DR**: Manage Linear tasks from terminal. Think in tasks, not branches.
+Linear task manager for the terminal. Think in tasks, not branches.
 
-> ⚠️ **Disclaimer**: This entire project was vibe-coded.
+Each task gets its own git worktree — switch between tasks without stashing or committing.
 
-## Quick Start
+## Install
 
 ```bash
-# Install
-git clone <repo> jora && cd jora && ./setup.sh
-
-# Add to PATH
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-
-# Setup (creates .env file in repository root)
-cd your-git-repository && jora
+git clone <repo> jora && cd jora
+uv tool install . --editable
 ```
 
-**Edit `.env`:**
+Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/) (`brew install uv gh && gh auth login`).
+
+## Setup
+
+Add a `.env` to any git repo where you want to use jora:
 
 ```bash
-LINEAR_API_KEY=lin_api_your_api_key_here
+LINEAR_API_KEY=lin_api_...
 LINEAR_TEAM_KEY=YOUR_TEAM_KEY
 LINEAR_WORKSPACE=your-workspace-name
 ```
 
 [Get API key here](https://linear.app/settings/api)
 
-**Finish setup:**
+## Usage
 
-```bash
-# Don't commit secrets (add to repository root .gitignore)
-echo ".env" >> .gitignore
-echo ".cache" >> .gitignore
-
-# For PR features (optional)
-brew install gh && gh auth login
+```
+jora
 ```
 
-## Commands
+That's it. Shows your tasks, PR status, and CI status.
 
-| Command   | What it does                                          |
-| --------- | ----------------------------------------------------- |
-| `jora` or `jora -i` | Interactive task browser - select and switch to tasks |
-| `jora -c` | Commit staged changes with Linear task title          |
-| `jora -p` | Create PR with task details                           |
-| `jora -t` | Show current task key and title                       |
+| Key     | Action                        |
+| ------- | ----------------------------- |
+| ↑/↓     | Navigate                      |
+| enter   | Switch to task (worktree)     |
+| o       | Open task in Linear           |
+| p       | Open PR in browser            |
+| r       | Refresh                       |
+| q / esc | Quit                          |
 
-**Works with any branch**: `feature/PROJ-123` → auto-detects `PROJ-123`
+Worktrees are created at `.worktrees/<task-key>/` inside your repo.
