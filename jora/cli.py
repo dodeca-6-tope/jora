@@ -68,14 +68,6 @@ def _format_task(task: Dict, prs: List[Dict], selected: bool, active: bool) -> s
     return f"{cur} {_pr_indicators(prs)} {ident} {title}"
 
 
-def _sort_key(task: Dict, prs_by_task: Dict) -> int:
-    """Sort tasks: approved PRs first, then reviewed, then no PR."""
-    prs = prs_by_task.get(task["identifier"])
-    if not prs:
-        return 4
-    status = analyze_reviews(prs[0].get("reviews", []))
-    return {"APPROVED": 0, "CHANGES_REQUESTED": 1, "REVIEW_REQUIRED": 1}.get(status, 2)
-
 # -- Screen drawing -----------------------------------------------------------
 
 
@@ -192,21 +184,12 @@ def main():
     cursor = 0
     message = ""
     spin = 0
-    sorted_after_load = False
-
     # Main loop: render at 60fps, handle input
     while True:
         if tasks:
             cursor = max(0, min(cursor, len(tasks) - 1))
 
         loading = not prs_ready.is_set()
-
-        # Sort once when PR data arrives, preserving cursor position
-        if not loading and not sorted_after_load:
-            selected_id = tasks[cursor]["identifier"] if tasks else None
-            tasks.sort(key=lambda t: _sort_key(t, prs_by_task))
-            cursor = next((i for i, t in enumerate(tasks) if t["identifier"] == selected_id), 0) if selected_id else 0
-            sorted_after_load = True
 
         if loading:
             spin += 1
