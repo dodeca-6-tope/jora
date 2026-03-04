@@ -155,8 +155,8 @@ def main():
             nonlocal tasks
             try:
                 tasks = linear.fetch_tasks()
-            except Exception:
-                pass
+            except Exception as e:
+                menu.message = f"Failed to load tasks: {e}"
             rebuild()
 
         def load_prs():

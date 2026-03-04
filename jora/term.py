@@ -72,7 +72,7 @@ def _cleanup():
 
 # -- Input -------------------------------------------------------------------
 
-def _readkey() -> str:
+def _readkey() -> Optional[str]:
     ready, _, _ = select.select([_fd], [], [], 1 / 60)
     if not ready:
         return None
