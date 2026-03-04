@@ -45,6 +45,18 @@ def add_repo(target: str) -> str:
     return name
 
 
+def remove_repo(name: str):
+    """Remove a registered repo."""
+    dest = _REPOS_DIR / name
+    if not dest.exists():
+        raise ValueError(f"Repo not found: {name}")
+    if dest.is_symlink():
+        dest.unlink()
+    else:
+        import shutil
+        shutil.rmtree(dest)
+
+
 def known_repos() -> List[str]:
     """List repo names under ~/.jora/repos/."""
     if not _REPOS_DIR.exists():

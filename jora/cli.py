@@ -10,6 +10,7 @@ from jora.git import (
     clean_worktrees,
     detect_active_task,
     known_repos,
+    remove_repo,
     repo_path,
     switch_to_task,
     _find_existing_worktree,
@@ -28,6 +29,18 @@ jora() {
     rm /tmp/jora_cd
   fi
 }
+_jora_completions() {
+  local cmds="init add remove"
+  if [[ $COMP_CWORD -eq 1 ]]; then
+    COMPREPLY=($(compgen -W "$cmds" -- "${COMP_WORDS[1]}"))
+  elif [[ "${COMP_WORDS[1]}" == "remove" && $COMP_CWORD -eq 2 ]]; then
+    local repos=$(ls ~/.jora/repos/ 2>/dev/null)
+    COMPREPLY=($(compgen -W "$repos" -- "${COMP_WORDS[2]}"))
+  elif [[ "${COMP_WORDS[1]}" == "add" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=($(compgen -d -- "${COMP_WORDS[2]}"))
+  fi
+}
+complete -F _jora_completions jora
 """
 _SUPPORTED_SHELLS = ("zsh", "bash")
 
@@ -92,6 +105,19 @@ def main():
         try:
             name = add_repo(sys.argv[2])
             print(f"Added {name}")
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # jora remove <name>
+    if len(sys.argv) > 1 and sys.argv[1] == "remove":
+        if len(sys.argv) < 3:
+            print("Usage: jora remove <repo-name>", file=sys.stderr)
+            sys.exit(1)
+        try:
+            remove_repo(sys.argv[2])
+            print(f"Removed {sys.argv[2]}")
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
