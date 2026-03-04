@@ -1,21 +1,13 @@
-import os
 from typing import Dict, List
 
 import requests
-from dotenv import load_dotenv
-
 
 LINEAR_API_URL = "https://api.linear.app/graphql"
 
 
 class LinearClient:
-    def __init__(self):
-        from pathlib import Path
-        load_dotenv(Path.home() / ".jora" / ".env")
-
-        self.api_key = os.getenv("LINEAR_API_KEY")
-        if not self.api_key:
-            raise RuntimeError("Missing LINEAR_API_KEY — add it to ~/.jora/.env")
+    def __init__(self, api_key: str):
+        self.api_key = api_key
 
     def _graphql(self, query: str) -> Dict:
         headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
@@ -26,6 +18,10 @@ class LinearClient:
             msgs = [e.get("message", str(e)) for e in data["errors"]]
             raise RuntimeError(f"Linear API error: {', '.join(msgs)}")
         return data.get("data", {})
+
+    def whoami(self) -> str:
+        result = self._graphql("{ viewer { name } }")
+        return result.get("viewer", {}).get("name", "Unknown")
 
     def fetch_tasks(self) -> List[Dict]:
         query = """

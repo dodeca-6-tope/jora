@@ -21,20 +21,7 @@ mkdir -p "$CUSTOM_DIR"
 jora init > "$CUSTOM_DIR/jora.zsh"
 echo "Shell integration → $CUSTOM_DIR/jora.zsh"
 
-# -- Linear API key ------------------------------------------------------------
-ENV_FILE="$HOME/.jora/.env"
-if grep -q "LINEAR_API_KEY=" "$ENV_FILE" 2>/dev/null; then
-  echo "Linear API key → already set"
-else
-  printf "Linear API key (get one at https://linear.app/settings/api): "
-  read -r key
-  if [[ -n "$key" ]]; then
-    echo "LINEAR_API_KEY=$key" > "$ENV_FILE"
-    echo "Linear API key → $ENV_FILE"
-  else
-    echo "Skipped — add LINEAR_API_KEY to ~/.jora/.env later"
-  fi
-fi
-
 echo ""
-echo "Done — restart your shell, then run: jora"
+echo "Done — restart your shell, then run:"
+echo "  jora auth    # set your Linear API key"
+echo "  jora         # start"

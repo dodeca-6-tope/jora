@@ -19,6 +19,7 @@ from jora.git import (
     repo_path,
     switch_to_task,
 )
+from jora import keychain
 from jora.linear import LinearClient
 from jora.github import analyze_ci, analyze_reviews, fetch_prs, match_prs_to_tasks
 from jora.term import Menu, Row, pick
@@ -37,7 +38,7 @@ jora() {
 }
 _jora() {
   if (( CURRENT == 2 )); then
-    compadd setup init add remove
+    compadd auth init add remove
   elif (( CURRENT == 3 )); then
     case $words[2] in
       remove) compadd $(ls ~/.jora/repos/ 2>/dev/null) ;;
@@ -207,6 +208,8 @@ def _parse_args():
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="print shell init script")
+    auth_p = sub.add_parser("auth", help="set Linear API key")
+    auth_p.add_argument("--reset", action="store_true", help="replace existing key")
 
     add_p = sub.add_parser("add", help="register a repo")
     add_p.add_argument("target", help="local path (symlink) or git URL (clone)")
@@ -222,6 +225,28 @@ def main():
 
     if args.command == "init":
         print(_SHELL_INIT)
+        return
+
+    if args.command == "auth":
+        existing = keychain.get("linear")
+        if existing and not args.reset:
+            try:
+                name = LinearClient(existing).whoami()
+                print(f"Authenticated as {name}")
+            except Exception:
+                print("Stored key is invalid — run: jora auth --reset")
+            return
+        key = input("Linear API key (https://linear.app/settings/api): ").strip()
+        if not key:
+            print("No API key provided")
+            sys.exit(1)
+        try:
+            name = LinearClient(key).whoami()
+            keychain.set("linear", key)
+            print(f"Authenticated as {name}")
+        except Exception as e:
+            print(f"Invalid key: {e}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.command == "add":
@@ -242,11 +267,11 @@ def main():
             sys.exit(1)
         return
 
-    try:
-        linear = LinearClient()
-    except Exception as e:
-        print(f"Error: {e}")
+    api_key = keychain.get("linear")
+    if not api_key:
+        print("No API key — run: jora auth")
         sys.exit(1)
+    linear = LinearClient(api_key)
 
     with Menu(loading=True) as menu:
         s = State(linear=linear, menu=menu, active_key=detect_active_task(),
