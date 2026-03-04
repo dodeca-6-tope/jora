@@ -7,12 +7,22 @@ Each task gets its own git worktree — switch between tasks without stashing or
 ## Install
 
 ```bash
-git clone <repo> jora && cd jora
-uv tool install . --editable
-eval "$(jora init zsh)"  # add to .zshrc (or: jora init zsh > ~/.oh-my-zsh/custom/jora.zsh)
+curl -fsSL https://raw.githubusercontent.com/dodeca-6-tope/jora/main/setup.sh | bash
 ```
 
-Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/) (`brew install uv gh && gh auth login`).
+Or manually:
+
+```bash
+uv tool install git+https://github.com/dodeca-6-tope/jora.git
+```
+
+Then add the shell wrapper to `~/.oh-my-zsh/custom/jora.zsh` (or your `.zshrc`):
+
+```bash
+eval "$(jora init zsh)"
+```
+
+Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/).
 
 ## Setup
 
