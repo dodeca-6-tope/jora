@@ -16,7 +16,6 @@ class LinearClient:
         self.api_key = os.getenv("LINEAR_API_KEY")
         self.team_id = os.getenv("LINEAR_TEAM_ID")
         self.team_key = os.getenv("LINEAR_TEAM_KEY")
-        self.workspace = os.getenv("LINEAR_WORKSPACE")
 
         if not self.api_key:
             raise RuntimeError("Missing LINEAR_API_KEY. Get one at https://linear.app/settings/api")
@@ -60,11 +59,7 @@ class LinearClient:
                     orderBy: updatedAt
                     filter: { state: { type: { nin: ["completed", "canceled"] } } }
                 ) {
-                    nodes {
-                        id identifier title
-                        state { name type }
-                        priority priorityLabel url updatedAt
-                    }
+                    nodes { identifier title url }
                 }
             }
         }

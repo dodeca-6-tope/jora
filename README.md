@@ -21,7 +21,6 @@ Add a `.env` to any git repo where you want to use jora:
 ```bash
 LINEAR_API_KEY=lin_api_...
 LINEAR_TEAM_KEY=YOUR_TEAM_KEY
-LINEAR_WORKSPACE=your-workspace-name
 ```
 
 [Get API key here](https://linear.app/settings/api)

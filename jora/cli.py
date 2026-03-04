@@ -18,13 +18,10 @@ import jora.term as term
 DIM = "\033[90m"
 GREEN = "\033[32m"
 RED = "\033[31m"
-YELLOW = "\033[33m"
-CYAN = "\033[36m"
 BOLD = "\033[1m"
-BG_YELLOW = "\033[103m"
 RESET = "\033[0m"
 SPINNER = r"-\|/"
-_PREFIX = 16  # visible chars before title: "> ● ● LTXD-408  "
+_PREFIX = 16  # visible chars before title: "> ✓ ✗ LTXD-408* "
 
 # -- Shell init (jora init <shell>) ------------------------------------------
 
@@ -41,31 +38,33 @@ _SUPPORTED_SHELLS = ("zsh", "bash")
 
 # -- Formatting ---------------------------------------------------------------
 
-
-def _dot(color_map: Dict[str, str], status: str) -> str:
-    color = color_map.get(status)
-    return f"{color}●{RESET}" if color else f"{DIM}○{RESET}"
+_OK = f"{GREEN}✓{RESET}"
+_FAIL = f"{RED}✗{RESET}"
+_NONE = f"{DIM}-{RESET}"
+_MARKS = {"APPROVED": _OK, "CHANGES_REQUESTED": _FAIL, "SUCCESS": _OK, "FAILURE": _FAIL}
 
 
 def _pr_indicators(prs: List[Dict]) -> str:
     if not prs:
         return "   "
     pr = prs[0]
-    rv = _dot({"APPROVED": GREEN, "CHANGES_REQUESTED": RED}, analyze_reviews(pr.get("reviews", [])))
-    ck = _dot({"SUCCESS": GREEN, "FAILURE": RED, "PENDING": YELLOW}, analyze_ci(pr.get("statusCheckRollup", [])))
+    rv = _MARKS.get(analyze_reviews(pr.get("reviews", [])), _NONE)
+    ck = _MARKS.get(analyze_ci(pr.get("statusCheckRollup", [])), _NONE)
     return f"{rv} {ck}"
 
 
 def _format_task(task: Dict, prs: List[Dict], selected: bool, active: bool) -> str:
     """Single task line: cursor, PR indicators, identifier, title."""
     ident_raw = task["identifier"][:9]
-    ident = f"{BG_YELLOW}{ident_raw}{RESET}{'':<{9 - len(ident_raw)}}" if active else f"{DIM}{ident_raw:<9}{RESET}"
+    star = "*" if active else ""
+    key = f"{ident_raw}{star}"
+    ident = f"{DIM}{key:<10}{RESET}"
     title = task.get("title", "No title")
     avail = os.get_terminal_size().columns - _PREFIX
     if avail > 3 and len(title) > avail:
         title = title[: avail - 3] + "..."
-    cur = f"{CYAN}>{RESET}" if selected else " "
-    return f"{cur} {_pr_indicators(prs)} {ident} {title}"
+    cur = ">" if selected else " "
+    return f"{cur} {_pr_indicators(prs)} {ident}{title}"
 
 
 # -- Screen drawing -----------------------------------------------------------
@@ -78,7 +77,7 @@ def _draw(tasks, prs_by_task, cursor, active_key="", message="", spin_frame=-1):
         active = task["identifier"].lower() == active_key
         lines.append(_format_task(task, prs_by_task.get(task["identifier"], []), i == cursor, active))
     lines.append("")
-    lines.append(f"{DIM}⏎ switch · o open · p PR · r refresh · q quit{RESET}")
+    lines.append(f"{DIM}⏎ switch  o open  p PR  r refresh  q quit{RESET}")
     if message:
         lines.append("")
         lines.append(message)
@@ -118,27 +117,6 @@ def _switch_to_task(task_id: str) -> str:
         return str(result[0])
     return f"Error: {error[0]}"
 
-
-def _open_in_linear(task: Dict, workspace: str):
-    key = task["identifier"]
-    url = f"https://linear.app/{workspace}/issue/{key}" if workspace else f"https://linear.app/issue/{key}"
-    webbrowser.open(url)
-
-
-def _open_pr(prs: List[Dict]) -> str:
-    """Open the first PR in browser. Returns error message if no PR."""
-    if prs:
-        webbrowser.open(prs[0]["url"])
-        return ""
-    return "No PR for this task"
-
-
-def _refresh(linear, load_prs_fn, prs_ready):
-    """Re-fetch tasks and kick off background PR load. Returns new task list."""
-    tasks = linear.fetch_tasks()
-    prs_ready.clear()
-    threading.Thread(target=load_prs_fn, daemon=True).start()
-    return tasks
 
 # -- Entry point --------------------------------------------------------------
 
@@ -224,13 +202,18 @@ def main():
                 Path("/tmp/jora_cd").write_text(path)
                 return
         elif key == "o":
-            _open_in_linear(tasks[cursor], linear.workspace)
+            webbrowser.open(tasks[cursor]["url"])
         elif key == "p":
-            message = _open_pr(prs_by_task.get(tasks[cursor]["identifier"], []))
+            task_prs = prs_by_task.get(tasks[cursor]["identifier"], [])
+            if task_prs:
+                webbrowser.open(task_prs[0]["url"])
+            else:
+                message = "No PR for this task"
         elif key == "r":
             try:
-                tasks = _refresh(linear, load_prs, prs_ready)
-                sorted_after_load = False
+                tasks = linear.fetch_tasks()
+                prs_ready.clear()
+                threading.Thread(target=load_prs, daemon=True).start()
                 spin = 0
             except Exception as e:
                 message = f"Error: {e}"
