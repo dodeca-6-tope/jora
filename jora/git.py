@@ -179,6 +179,12 @@ def clean_worktrees() -> int:
             import shutil
             shutil.rmtree(wt, ignore_errors=True)
         removed += 1
+
+    # Remove empty repo dirs under worktrees/
+    for repo_dir in _WORKTREES_DIR.iterdir():
+        if repo_dir.is_dir() and not any(repo_dir.iterdir()):
+            repo_dir.rmdir()
+
     return removed
 
 
