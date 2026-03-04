@@ -13,6 +13,7 @@ fi
 
 # -- Install jora --------------------------------------------------------------
 echo "Installing jora..."
+mkdir -p "$HOME/.jora"
 uv tool install --force "git+$REPO"
 
 # -- Add shell wrapper ---------------------------------------------------------
