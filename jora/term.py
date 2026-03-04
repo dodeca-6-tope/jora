@@ -221,7 +221,10 @@ def pick(title: str, items: List[str]) -> Optional[int]:
         lines.append(f"{_DIM}\u23ce select  esc back{_RESET}")
         _render(lines)
 
-        key = _readkey()
+        try:
+            key = _readkey()
+        except KeyboardInterrupt:
+            return None
         if key is None:
             continue
         if key == "up":
