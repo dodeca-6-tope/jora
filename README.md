@@ -10,30 +10,9 @@ Each task gets its own git worktree — switch between tasks without stashing or
 curl -fsSL https://raw.githubusercontent.com/dodeca-6-tope/jora/main/setup.sh | bash
 ```
 
-Or manually:
-
-```bash
-uv tool install git+https://github.com/dodeca-6-tope/jora.git
-```
-
-Then add the shell wrapper to `~/.oh-my-zsh/custom/jora.zsh` (or your `.zshrc`):
-
-```bash
-eval "$(jora init zsh)"
-```
+Installs jora, sets up shell integration (completions + cd wrapper), and prompts for your [Linear API key](https://linear.app/settings/api).
 
 Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/).
-
-## Setup
-
-Add your Linear API key to `~/.jora/.env`:
-
-```bash
-mkdir -p ~/.jora
-echo 'LINEAR_API_KEY=lin_api_...' >> ~/.jora/.env
-```
-
-[Get API key here](https://linear.app/settings/api)
 
 ## Usage
 

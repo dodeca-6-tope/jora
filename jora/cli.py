@@ -32,23 +32,22 @@ jora() {
   command jora "$@"
   if [[ -f ~/.jora/cd ]]; then
     cd "$(cat ~/.jora/cd)"
-    rm ~/.jora/cd
+    rm -f ~/.jora/cd
   fi
 }
-_jora_completions() {
-  local cmds="init add remove"
-  if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "$cmds" -- "${COMP_WORDS[1]}"))
-  elif [[ "${COMP_WORDS[1]}" == "remove" && $COMP_CWORD -eq 2 ]]; then
-    local repos=$(ls ~/.jora/repos/ 2>/dev/null)
-    COMPREPLY=($(compgen -W "$repos" -- "${COMP_WORDS[2]}"))
-  elif [[ "${COMP_WORDS[1]}" == "add" && $COMP_CWORD -eq 2 ]]; then
-    COMPREPLY=($(compgen -d -- "${COMP_WORDS[2]}"))
+_jora() {
+  if (( CURRENT == 2 )); then
+    compadd setup init add remove
+  elif (( CURRENT == 3 )); then
+    case $words[2] in
+      remove) compadd $(ls ~/.jora/repos/ 2>/dev/null) ;;
+      add) _directories ;;
+      init) compadd zsh ;;
+    esac
   fi
 }
-complete -F _jora_completions jora
+compdef _jora jora
 """
-_SUPPORTED_SHELLS = ("zsh", "bash")
 
 
 # -- Data preparation --------------------------------------------------------
@@ -207,8 +206,7 @@ def _parse_args():
     parser = argparse.ArgumentParser(prog="jora", description="Linear task switcher with git worktrees")
     sub = parser.add_subparsers(dest="command")
 
-    init_p = sub.add_parser("init", help="print shell init script")
-    init_p.add_argument("shell", choices=_SUPPORTED_SHELLS)
+    sub.add_parser("init", help="print shell init script")
 
     add_p = sub.add_parser("add", help="register a repo")
     add_p.add_argument("target", help="local path (symlink) or git URL (clone)")

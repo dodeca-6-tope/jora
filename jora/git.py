@@ -73,7 +73,7 @@ def repo_path(repo_name: str) -> Optional[Path]:
 def detect_active_task() -> str:
     """If cwd is inside a jora worktree, return the task key (lowercase)."""
     cwd = Path.cwd()
-    return cwd.name if str(cwd).startswith(str(_WORKTREES_DIR)) else ""
+    return cwd.name if cwd.is_relative_to(_WORKTREES_DIR) else ""
 
 
 def list_worktrees() -> Dict[str, Path]:
@@ -123,6 +123,8 @@ def _is_worktree_clean(wt: Path) -> bool:
         ["git", "status", "--porcelain"],
         cwd=cwd, capture_output=True, text=True,
     )
+    if status.returncode != 0:
+        return False  # can't tell — assume dirty
     if status.stdout.strip():
         return False
 
@@ -132,6 +134,8 @@ def _is_worktree_clean(wt: Path) -> bool:
         ["git", "log", "--oneline", f"origin/{base}..HEAD"],
         cwd=cwd, capture_output=True, text=True,
     )
+    if unique.returncode != 0:
+        return False
     if not unique.stdout.strip():
         return True
 
