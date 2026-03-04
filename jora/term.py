@@ -211,7 +211,20 @@ class Menu:
 
 
 def pick(title: str, items: List[str]) -> Optional[int]:
-    """Minimal picker. Returns selected index or None if cancelled."""
+    """Minimal picker. Returns selected index or None if cancelled.
+    Works both standalone and inside an active Menu.
+    """
+    owned = not _active
+    if owned:
+        _init()
+    try:
+        return _pick_loop(title, items)
+    finally:
+        if owned:
+            _cleanup()
+
+
+def _pick_loop(title: str, items: List[str]) -> Optional[int]:
     cursor = 0
     while True:
         lines = [f"{_BOLD}{title}{_RESET}", ""]
