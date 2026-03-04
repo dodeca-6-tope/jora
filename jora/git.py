@@ -47,6 +47,17 @@ def _find_existing_worktree(task_key: str) -> Optional[Path]:
     return None
 
 
+def _default_branch() -> str:
+    """Detect the remote's default branch (e.g. main, develop)."""
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip().removeprefix("refs/remotes/origin/")
+    return "main"
+
+
 def switch_to_task(task_key: str) -> Path:
     """Create or locate a worktree for the task. Returns the worktree path."""
     existing = _find_existing_worktree(task_key)
@@ -62,11 +73,12 @@ def switch_to_task(task_key: str) -> Path:
         capture_output=True, text=True,
     ).returncode == 0
 
-    subprocess.run(["git", "fetch", "origin", "develop"], capture_output=True, check=True)
+    base = _default_branch()
+    subprocess.run(["git", "fetch", "origin", base], capture_output=True, check=True)
 
     if branch_exists:
         subprocess.run(["git", "worktree", "add", str(wt), branch], capture_output=True, check=True)
     else:
-        subprocess.run(["git", "worktree", "add", str(wt), "-b", branch, "origin/develop"], capture_output=True, check=True)
+        subprocess.run(["git", "worktree", "add", str(wt), "-b", branch, f"origin/{base}"], capture_output=True, check=True)
 
     return wt
