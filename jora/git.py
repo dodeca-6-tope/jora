@@ -27,23 +27,16 @@ def _worktree_dir(task_key: str) -> Path:
 
 
 def _find_existing_worktree(task_key: str) -> Optional[Path]:
-    """Find a worktree for this task — by directory name or branch name."""
-    wt = _worktree_dir(task_key)
-    if wt.exists():
-        return wt
-
-    branch = f"feature/{task_key.lower()}"
-    result = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"],
-        capture_output=True, text=True, check=True,
-    )
-    current_wt = None
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree "):
-            current_wt = line[len("worktree "):]
-        elif line.startswith("branch refs/heads/") and current_wt:
-            if line[len("branch refs/heads/"):] == branch:
-                return Path(current_wt)
+    """Find a worktree for this task — scan all repos under ~/.jora/worktrees/."""
+    base = Path.home() / ".jora" / "worktrees"
+    if not base.exists():
+        return None
+    for repo_dir in base.iterdir():
+        if not repo_dir.is_dir():
+            continue
+        wt = repo_dir / task_key.lower()
+        if wt.exists():
+            return wt
     return None
 
 
@@ -56,6 +49,7 @@ def _default_branch() -> str:
     if result.returncode == 0:
         return result.stdout.strip().removeprefix("refs/remotes/origin/")
     return "main"
+
 
 
 def switch_to_task(task_key: str) -> Path:

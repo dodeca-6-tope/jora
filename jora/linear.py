@@ -10,12 +10,12 @@ LINEAR_API_URL = "https://api.linear.app/graphql"
 
 class LinearClient:
     def __init__(self):
-        from jora.git import get_repo_root
-        load_dotenv(get_repo_root() / ".env")
+        from pathlib import Path
+        load_dotenv(Path.home() / ".jora" / ".env")
 
         self.api_key = os.getenv("LINEAR_API_KEY")
         if not self.api_key:
-            raise RuntimeError("Missing LINEAR_API_KEY. Get one at https://linear.app/settings/api")
+            raise RuntimeError("Missing LINEAR_API_KEY — add it to ~/.jora/.env")
 
     def _graphql(self, query: str) -> Dict:
         headers = {"Authorization": self.api_key, "Content-Type": "application/json"}

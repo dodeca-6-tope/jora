@@ -39,6 +39,6 @@ fi
 echo ""
 echo "Done! Next steps:"
 echo "  1. Restart your shell or run: source $WRAPPER"
-echo "  2. Add a .env to your repo with: LINEAR_API_KEY=lin_api_..."
+echo "  2. Add your Linear API key: echo 'LINEAR_API_KEY=lin_api_...' >> ~/.jora/.env"
 echo "     (Get one at https://linear.app/settings/api)"
 echo "  3. Run: jora"

@@ -26,10 +26,11 @@ Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/).
 
 ## Setup
 
-Add a `.env` to any git repo where you want to use jora:
+Add your Linear API key to `~/.jora/.env`:
 
 ```bash
-LINEAR_API_KEY=lin_api_...
+mkdir -p ~/.jora
+echo 'LINEAR_API_KEY=lin_api_...' >> ~/.jora/.env
 ```
 
 [Get API key here](https://linear.app/settings/api)
