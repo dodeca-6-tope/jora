@@ -142,8 +142,10 @@ def main():
 
         tasks = []
         prs_by_task = {}
-        tasks_ready = threading.Event()
         prs_ready = threading.Event()
+
+        def rebuild():
+            menu.rows = _build_rows(tasks, prs_by_task, active_key)
 
         def load_tasks():
             nonlocal tasks
@@ -151,26 +153,26 @@ def main():
                 tasks = linear.fetch_tasks()
             except Exception:
                 pass
-            tasks_ready.set()
+            rebuild()
 
         def load_prs():
-            tasks_ready.wait()
             nonlocal prs_by_task
             prs_by_task = match_prs_to_tasks([t["identifier"] for t in tasks], fetch_prs())
+            rebuild()
             prs_ready.set()
 
         def start_loading():
-            tasks_ready.clear()
             prs_ready.clear()
-            threading.Thread(target=load_tasks, daemon=True).start()
-            threading.Thread(target=load_prs, daemon=True).start()
+            t_tasks = threading.Thread(target=load_tasks, daemon=True)
+            t_prs = threading.Thread(target=load_prs, daemon=True)
+            t_tasks.start()
+            t_tasks.join()  # prs depend on tasks
+            t_prs.start()
 
-        start_loading()
+        threading.Thread(target=start_loading, daemon=True).start()
 
         while True:
-            if tasks_ready.is_set():
-                menu.rows = _build_rows(tasks, prs_by_task, active_key)
-                menu.loading = not prs_ready.is_set()
+            menu.loading = not prs_ready.is_set()
 
             try:
                 action = menu.tick()
@@ -223,8 +225,10 @@ def main():
                         active_key = ""
                         rp = repo_path(active_repo) or Path.home()
                         Path("/tmp/jora_cd").write_text(str(rp))
+                    if n:
+                        rebuild()
                 except Exception as e:
                     menu.message = f"Error: {e}"
             elif action == "refresh":
                 menu.loading = True
-                start_loading()
+                threading.Thread(target=start_loading, daemon=True).start()
