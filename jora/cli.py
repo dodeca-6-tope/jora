@@ -84,10 +84,10 @@ def main():
         print(_SHELL_INIT)
         return
 
-    # jora add <path>
+    # jora add <path-or-url>
     if len(sys.argv) > 1 and sys.argv[1] == "add":
         if len(sys.argv) < 3:
-            print("Usage: jora add <path-to-repo>", file=sys.stderr)
+            print("Usage: jora add <path-or-git-url>", file=sys.stderr)
             sys.exit(1)
         try:
             name = add_repo(sys.argv[2])

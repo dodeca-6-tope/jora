@@ -1,28 +1,33 @@
-import json
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 _JORA_DIR = Path.home() / ".jora"
+_REPOS_DIR = _JORA_DIR / "repos"
 _WORKTREES_DIR = _JORA_DIR / "worktrees"
-_REPOS_FILE = _JORA_DIR / "repos.json"
 
 
-def _load_repos() -> Dict[str, str]:
-    """Load {name: path} from ~/.jora/repos.json."""
-    if not _REPOS_FILE.exists():
-        return {}
-    return json.loads(_REPOS_FILE.read_text())
+def _is_git_url(s: str) -> bool:
+    return s.startswith("git@") or s.startswith("https://") or s.startswith("ssh://")
 
 
-def _save_repos(repos: Dict[str, str]):
-    _REPOS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _REPOS_FILE.write_text(json.dumps(repos, indent=2) + "\n")
+def add_repo(target: str) -> str:
+    """Register a repo by local path (symlink) or git URL (clone). Returns the repo name."""
+    if _is_git_url(target):
+        name = target.rsplit("/", 1)[-1].removesuffix(".git")
+        dest = _REPOS_DIR / name
+        if dest.exists():
+            raise ValueError(f"Repo already exists: {name}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            ["git", "clone", target, str(dest)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise ValueError(f"Clone failed: {result.stderr.strip()}")
+        return name
 
-
-def add_repo(path_str: str) -> str:
-    """Register a repo by path. Returns the repo name."""
-    p = Path(path_str).expanduser().resolve()
+    p = Path(target).expanduser().resolve()
     if not p.is_dir():
         raise ValueError(f"Not a directory: {p}")
     check = subprocess.run(
@@ -32,22 +37,25 @@ def add_repo(path_str: str) -> str:
     if check.returncode != 0:
         raise ValueError(f"Not a git repo: {p}")
     name = p.name
-    repos = _load_repos()
-    repos[name] = str(p)
-    _save_repos(repos)
+    dest = _REPOS_DIR / name
+    if dest.exists():
+        raise ValueError(f"Repo already exists: {name}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.symlink_to(p)
     return name
 
 
 def known_repos() -> List[str]:
-    """List registered repo names."""
-    return sorted(_load_repos().keys())
+    """List repo names under ~/.jora/repos/."""
+    if not _REPOS_DIR.exists():
+        return []
+    return sorted(d.name for d in _REPOS_DIR.iterdir() if d.is_dir())
 
 
 def repo_path(repo_name: str) -> Optional[Path]:
     """Get the path for a registered repo."""
-    repos = _load_repos()
-    p = repos.get(repo_name)
-    return Path(p) if p else None
+    p = _REPOS_DIR / repo_name
+    return p if p.exists() else None
 
 
 def detect_active_task() -> str:
