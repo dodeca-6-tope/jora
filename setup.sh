@@ -25,12 +25,9 @@ else
   cat > "$WRAPPER" << 'EOF'
 jora() {
   command jora "$@"
-  if [[ -f /tmp/jora_cd ]]; then
-    local dir=$(cat /tmp/jora_cd)
-    local cmd=$(cat /tmp/jora_cmd 2>/dev/null)
-    rm -f /tmp/jora_cd /tmp/jora_cmd
-    cd "$dir"
-    [[ -n "$cmd" ]] && eval "$cmd"
+  if [[ -f ~/.jora/cd ]]; then
+    cd "$(cat ~/.jora/cd)"
+    rm ~/.jora/cd
   fi
 }
 EOF

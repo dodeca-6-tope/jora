@@ -21,14 +21,16 @@ from jora.linear import LinearClient
 from jora.github import analyze_ci, analyze_reviews, fetch_prs, match_prs_to_tasks
 from jora.term import Menu, Row, pick
 
+_CD_FILE = Path.home() / ".jora" / "cd"
+
 # -- Shell init (jora init <shell>) ------------------------------------------
 
 _SHELL_INIT = """\
 jora() {
   command jora "$@"
-  if [[ -f /tmp/jora_cd ]]; then
-    cd "$(cat /tmp/jora_cd)"
-    rm /tmp/jora_cd
+  if [[ -f ~/.jora/cd ]]; then
+    cd "$(cat ~/.jora/cd)"
+    rm ~/.jora/cd
   fi
 }
 _jora_completions() {
@@ -193,7 +195,7 @@ def main():
 
                 existing = find_worktree(task_id)
                 if existing:
-                    Path("/tmp/jora_cd").write_text(str(existing))
+                    _CD_FILE.write_text(str(existing))
                     return
 
                 repo = _pick_repo(task_id)
@@ -207,7 +209,7 @@ def main():
                         f"Switching to {task_id}",
                         lambda: switch_to_task(task_id, repo),
                     )
-                    Path("/tmp/jora_cd").write_text(str(wt_path))
+                    _CD_FILE.write_text(str(wt_path))
                     return
                 except Exception as e:
                     menu.message = f"Error: {e}"
@@ -228,7 +230,7 @@ def main():
                     if n and active_wt and not active_wt.exists():
                         active_key = ""
                         rp = repo_path(active_repo) or Path.home()
-                        Path("/tmp/jora_cd").write_text(str(rp))
+                        _CD_FILE.write_text(str(rp))
                     if n:
                         rebuild()
                 except Exception as e:
