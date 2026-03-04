@@ -126,11 +126,8 @@ def _is_worktree_clean(wt: Path) -> bool:
     if status.stdout.strip():
         return False
 
-    # Fetch so origin refs are up to date
-    base = _default_branch(cwd)
-    subprocess.run(["git", "fetch", "origin", base], cwd=cwd, capture_output=True)
-
     # No unique commits beyond default branch → safe to clean
+    base = _default_branch(cwd)
     unique = subprocess.run(
         ["git", "log", "--oneline", f"origin/{base}..HEAD"],
         cwd=cwd, capture_output=True, text=True,
@@ -162,6 +159,13 @@ def clean_worktrees() -> int:
 
     if not all_wts:
         return 0
+
+    # Fetch once per repo (not per worktree)
+    for repo_name in {name for name, _ in all_wts}:
+        rp = repo_path(repo_name)
+        if rp:
+            base = _default_branch(str(rp))
+            subprocess.run(["git", "fetch", "origin", base], cwd=str(rp), capture_output=True)
 
     # Check cleanliness in parallel
     from concurrent.futures import ThreadPoolExecutor
