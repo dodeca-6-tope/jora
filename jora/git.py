@@ -1,6 +1,6 @@
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 _JORA_DIR = Path.home() / ".jora"
 _REPOS_DIR = _JORA_DIR / "repos"
@@ -76,7 +76,21 @@ def detect_active_task() -> str:
     return cwd.name if str(cwd).startswith(str(_WORKTREES_DIR)) else ""
 
 
-def _find_existing_worktree(task_key: str) -> Optional[Path]:
+def list_worktrees() -> Dict[str, Path]:
+    """Return {task_key: worktree_path} for all jora worktrees. No subprocesses."""
+    if not _WORKTREES_DIR.exists():
+        return {}
+    result = {}
+    for repo_dir in _WORKTREES_DIR.iterdir():
+        if not repo_dir.is_dir():
+            continue
+        for wt in repo_dir.iterdir():
+            if wt.is_dir() and (wt / ".git").exists():
+                result[wt.name] = wt
+    return result
+
+
+def find_worktree(task_key: str) -> Optional[Path]:
     """Find a worktree for this task — scan all repos under ~/.jora/worktrees/."""
     if not _WORKTREES_DIR.exists():
         return None
@@ -84,14 +98,7 @@ def _find_existing_worktree(task_key: str) -> Optional[Path]:
         if not repo_dir.is_dir():
             continue
         wt = repo_dir / task_key.lower()
-        if not wt.is_dir():
-            continue
-        # Verify it's a git worktree root (not a subdirectory inside another repo)
-        check = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=str(wt), capture_output=True, text=True,
-        )
-        if check.returncode == 0 and Path(check.stdout.strip()) == wt:
+        if wt.is_dir() and (wt / ".git").exists():
             return wt
     return None
 
@@ -202,7 +209,7 @@ def clean_worktrees() -> int:
 
 def switch_to_task(task_key: str, repo_path: Path) -> Path:
     """Create or locate a worktree for the task. Returns the worktree path."""
-    existing = _find_existing_worktree(task_key)
+    existing = find_worktree(task_key)
     if existing:
         return existing
 

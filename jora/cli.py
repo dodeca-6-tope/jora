@@ -10,11 +10,12 @@ from jora.git import (
     add_repo,
     clean_worktrees,
     detect_active_task,
+    find_worktree,
     known_repos,
+    list_worktrees,
     remove_repo,
     repo_path,
     switch_to_task,
-    _find_existing_worktree,
 )
 from jora.linear import LinearClient
 from jora.github import analyze_ci, analyze_reviews, fetch_prs, match_prs_to_tasks
@@ -52,7 +53,7 @@ _REVIEW_MARK = {"APPROVED": "ok", "CHANGES_REQUESTED": "fail"}
 _CI_MARK = {"SUCCESS": "ok", "FAILURE": "fail"}
 
 
-def _build_rows(tasks, prs_by_task, active_key):
+def _build_rows(tasks, prs_by_task, active_key, worktrees):
     rows = []
     for task in tasks:
         prs = prs_by_task.get(task["identifier"], [])
@@ -69,7 +70,7 @@ def _build_rows(tasks, prs_by_task, active_key):
             title=task.get("title", "No title"),
             marks=marks,
             active=task_lower == active_key,
-            worktree=_find_existing_worktree(task_lower) is not None,
+            worktree=task_lower in worktrees,
         ))
     return rows
 
@@ -142,10 +143,13 @@ def main():
 
         tasks = []
         prs_by_task = {}
+        worktrees = list_worktrees()
         prs_ready = threading.Event()
 
         def rebuild():
-            menu.rows = _build_rows(tasks, prs_by_task, active_key)
+            nonlocal worktrees
+            worktrees = list_worktrees()
+            menu.rows = _build_rows(tasks, prs_by_task, active_key, worktrees)
 
         def load_tasks():
             nonlocal tasks
@@ -187,7 +191,7 @@ def main():
             if action == "select":
                 task_id = tasks[menu.selected]["identifier"]
 
-                existing = _find_existing_worktree(task_id)
+                existing = find_worktree(task_id)
                 if existing:
                     Path("/tmp/jora_cd").write_text(str(existing))
                     return
@@ -217,7 +221,7 @@ def main():
                     menu.message = "No PR for this task"
             elif action == "clean":
                 try:
-                    active_wt = _find_existing_worktree(active_key) if active_key else None
+                    active_wt = find_worktree(active_key) if active_key else None
                     active_repo = active_wt.parent.name if active_wt else None
                     n = menu.run_blocking("Cleaning worktrees", clean_worktrees)
                     menu.message = f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
