@@ -39,6 +39,7 @@ class Row:
     title: str
     marks: Tuple[str, ...] = ()  # "ok", "fail", "neutral"
     active: bool = False
+    worktree: bool = False
 
 
 # -- Setup / teardown --------------------------------------------------------
@@ -99,7 +100,7 @@ def _format_marks(marks: Tuple[str, ...]) -> str:
 
 
 def _format_row(row: Row, selected: bool) -> str:
-    star = "*" if row.active else ""
+    star = "*" if row.active else ("+" if row.worktree else "")
     key = f"{row.key}{star}"
     ident = f"{_DIM}{key:<10}{_RESET}"
     title = row.title

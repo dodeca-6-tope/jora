@@ -63,11 +63,13 @@ def _build_rows(tasks, prs_by_task, active_key):
             marks = (rv, ci)
         else:
             marks = ()
+        task_lower = task["identifier"].lower()
         rows.append(Row(
             key=task["identifier"][:9],
             title=task.get("title", "No title"),
             marks=marks,
-            active=task["identifier"].lower() == active_key,
+            active=task_lower == active_key,
+            worktree=_find_existing_worktree(task_lower) is not None,
         ))
     return rows
 
