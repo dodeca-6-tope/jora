@@ -181,8 +181,14 @@ def main():
                     menu.message = "No PR for this task"
             elif action == "clean":
                 try:
+                    active_wt = _find_existing_worktree(active_key) if active_key else None
+                    active_repo = active_wt.parent.name if active_wt else None
                     n = menu.run_blocking("Cleaning worktrees", clean_worktrees)
                     menu.message = f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
+                    if n and active_wt and not active_wt.exists():
+                        active_key = ""
+                        rp = repo_path(active_repo) or Path.home()
+                        Path("/tmp/jora_cd").write_text(str(rp))
                 except Exception as e:
                     menu.message = f"Error: {e}"
             elif action == "refresh":
