@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 from typing import Dict, List
 
-from jora.git import switch_to_task
+from jora.git import detect_active_task, switch_to_task
 from jora.linear import LinearClient
 from jora.github import analyze_ci, analyze_reviews, fetch_prs, match_prs_to_tasks
 import jora.term as term
@@ -86,13 +86,6 @@ def _draw(tasks, prs_by_task, cursor, active_key="", message="", spin_frame=-1):
 # -- Actions ------------------------------------------------------------------
 
 
-def _detect_active_task() -> str:
-    """If cwd is inside a jora worktree, return the task key (lowercase)."""
-    cwd = Path.cwd()
-    jora_dir = Path.home() / ".jora" / "worktrees"
-    return cwd.name if str(cwd).startswith(str(jora_dir)) else ""
-
-
 def _switch_to_task(task_id: str) -> str:
     """Switch to a task worktree in a background thread with spinner.
     Returns worktree path on success, or an error message string prefixed with 'Error:'."""
@@ -139,7 +132,7 @@ def main():
 
     term.init()
 
-    active_key = _detect_active_task()
+    active_key = detect_active_task()
 
     try:
         tasks = linear.fetch_tasks()

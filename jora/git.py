@@ -15,6 +15,13 @@ def get_repo_root() -> Path:
         return Path.cwd()
 
 
+def detect_active_task() -> str:
+    """If cwd is inside a jora worktree, return the task key (lowercase)."""
+    cwd = Path.cwd()
+    jora_dir = Path.home() / ".jora" / "worktrees"
+    return cwd.name if str(cwd).startswith(str(jora_dir)) else ""
+
+
 def _worktree_dir(task_key: str) -> Path:
     return Path.home() / ".jora" / "worktrees" / get_repo_root().name / task_key.lower()
 
