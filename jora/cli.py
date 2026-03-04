@@ -1,5 +1,6 @@
 """Interactive task picker UI."""
 
+import argparse
 import sys
 import threading
 import webbrowser
@@ -87,37 +88,42 @@ def _pick_repo(task_id):
 
 # -- Entry point --------------------------------------------------------------
 
+def _parse_args():
+    parser = argparse.ArgumentParser(prog="jora", description="Linear task switcher with git worktrees")
+    sub = parser.add_subparsers(dest="command")
+
+    init_p = sub.add_parser("init", help="print shell init script")
+    init_p.add_argument("shell", choices=_SUPPORTED_SHELLS)
+
+    add_p = sub.add_parser("add", help="register a repo")
+    add_p.add_argument("target", help="local path (symlink) or git URL (clone)")
+
+    rm_p = sub.add_parser("remove", help="unregister a repo")
+    rm_p.add_argument("name", help="repo name from ~/.jora/repos/")
+
+    return parser.parse_args()
+
+
 def main():
-    # jora init <shell>
-    if len(sys.argv) > 1 and sys.argv[1] == "init":
-        shell = sys.argv[2] if len(sys.argv) > 2 else None
-        if shell not in _SUPPORTED_SHELLS:
-            print(f"Usage: jora init <{'|'.join(_SUPPORTED_SHELLS)}>", file=sys.stderr)
-            sys.exit(1)
+    args = _parse_args()
+
+    if args.command == "init":
         print(_SHELL_INIT)
         return
 
-    # jora add <path-or-url>
-    if len(sys.argv) > 1 and sys.argv[1] == "add":
-        if len(sys.argv) < 3:
-            print("Usage: jora add <path-or-git-url>", file=sys.stderr)
-            sys.exit(1)
+    if args.command == "add":
         try:
-            name = add_repo(sys.argv[2])
+            name = add_repo(args.target)
             print(f"Added {name}")
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
         return
 
-    # jora remove <name>
-    if len(sys.argv) > 1 and sys.argv[1] == "remove":
-        if len(sys.argv) < 3:
-            print("Usage: jora remove <repo-name>", file=sys.stderr)
-            sys.exit(1)
+    if args.command == "remove":
         try:
-            remove_repo(sys.argv[2])
-            print(f"Removed {sys.argv[2]}")
+            remove_repo(args.name)
+            print(f"Removed {args.name}")
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
