@@ -124,7 +124,7 @@ def _render(lines: list[str]):
 _KEY_TO_ACTION = {
     "enter": "select", "s": "select",
     "o": "open", "p": "pr", "r": "refresh",
-    "q": "quit", "esc": "quit",
+    "c": "clean", "q": "quit", "esc": "quit",
 }
 
 
@@ -172,8 +172,8 @@ class Menu:
     def selected(self) -> int:
         return self._cursor
 
-    def run_blocking(self, text: str, fn: Callable) -> str:
-        """Run fn() in a background thread with a spinner. Returns result or 'Error: ...'."""
+    def run_blocking(self, text: str, fn: Callable):
+        """Run fn() in a background thread with a spinner. Returns result or raises."""
         result = [None]
         error = [None]
 
@@ -181,7 +181,7 @@ class Menu:
             try:
                 result[0] = fn()
             except Exception as e:
-                error[0] = str(e)
+                error[0] = e
 
         t = threading.Thread(target=work, daemon=True)
         t.start()
@@ -191,9 +191,9 @@ class Menu:
             _render([f"{text} {_SPINNER[frame // 4 % len(_SPINNER)]}"])
             t.join(timeout=1 / 60)
 
-        if result[0] is not None:
-            return str(result[0])
-        return f"Error: {error[0]}"
+        if error[0] is not None:
+            raise error[0]
+        return result[0]
 
     def _draw(self):
         spinner = f" {_DIM}{_SPINNER[self._spin // 4 % len(_SPINNER)]}{_RESET}" if self.loading else ""
@@ -202,8 +202,33 @@ class Menu:
             lines.append(_format_row(row, i == self._cursor))
         if self.rows:
             lines.append("")
-            lines.append(f"{_DIM}⏎ switch  o open  p PR  r refresh  q quit{_RESET}")
+            lines.append(f"{_DIM}⏎ switch  o open  p PR  r refresh  c clean  q quit{_RESET}")
         if self.message:
             lines.append("")
             lines.append(self.message)
         _render(lines)
+
+
+def pick(title: str, items: List[str]) -> Optional[int]:
+    """Minimal picker. Returns selected index or None if cancelled."""
+    cursor = 0
+    while True:
+        lines = [f"{_BOLD}{title}{_RESET}", ""]
+        for i, item in enumerate(items):
+            cur = ">" if i == cursor else " "
+            lines.append(f"{cur} {item}")
+        lines.append("")
+        lines.append(f"{_DIM}\u23ce select  esc back{_RESET}")
+        _render(lines)
+
+        key = _readkey()
+        if key is None:
+            continue
+        if key == "up":
+            cursor = max(0, cursor - 1)
+        elif key == "down":
+            cursor = min(len(items) - 1, cursor + 1)
+        elif key in ("enter", "s"):
+            return cursor
+        elif key in ("esc", "q"):
+            return None
