@@ -1,8 +1,6 @@
 # Jora
 
-Linear task manager for the terminal. Think in tasks, not branches.
-
-Each task gets its own git worktree — switch between tasks without stashing or committing.
+Task switcher for Linear. Worktrees + tmux sessions per task, PR/CI status at a glance.
 
 ## Install
 
@@ -20,7 +18,7 @@ Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/).
 jora
 ```
 
-Shows your tasks, PR status, CI status, and review requests. Each task gets a git worktree and a tmux session — switch between them instantly.
+Pick a task, get a worktree and a tmux session. See PR reviews, CI status, and pending code reviews — all in one screen.
 
 | Key     | Action                        |
 | ------- | ----------------------------- |
