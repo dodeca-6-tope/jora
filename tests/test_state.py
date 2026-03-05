@@ -565,3 +565,24 @@ def test_queries(tmp_path):
 
     assert s.has_worktree("proj-1")
     assert s.has_session("proj-1")
+
+
+def test_repos_sorted_by_usage(tmp_path):
+    # Repos with more worktrees appear first in the picker
+    _init_repo(tmp_path, "alpha")
+    _init_repo(tmp_path, "beta")
+    s = _loaded_state(tmp_path, tasks=[
+        {"identifier": "PROJ-1", "title": "Task 1", "url": "u1"},
+        {"identifier": "PROJ-2", "title": "Task 2", "url": "u2"},
+    ])
+
+    # no worktrees — alphabetical
+    assert s.repos() == ["alpha", "beta"]
+
+    # create worktrees in beta — beta should sort first
+    s.open_task("proj-1", "beta")
+    s.open_task("proj-2", "beta")
+    s.kill_session("proj-1")
+    s.kill_session("proj-2")
+
+    assert s.repos()[0] == "beta"

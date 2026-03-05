@@ -62,7 +62,13 @@ class Git:
     def known_repos(self) -> List[str]:
         if not self._repos_dir.exists():
             return []
-        return sorted(d.name for d in self._repos_dir.iterdir() if d.is_dir())
+        repos = [d.name for d in self._repos_dir.iterdir() if d.is_dir()]
+        wt_counts = {}
+        if self._worktrees_dir.exists():
+            for d in self._worktrees_dir.iterdir():
+                if d.is_dir():
+                    wt_counts[d.name] = sum(1 for w in d.iterdir() if w.is_dir())
+        return sorted(repos, key=lambda r: (-wt_counts.get(r, 0), r))
 
     def repo_path(self, repo_name: str) -> Optional[Path]:
         p = self._repos_dir / repo_name
