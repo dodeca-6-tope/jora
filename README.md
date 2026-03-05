@@ -22,14 +22,24 @@ jora
 
 Shows your tasks, PR status, and CI status. Pick a task to switch into its worktree.
 
-| Key     | Action                    |
-| ------- | ------------------------- |
-| ↑/↓     | Navigate                  |
-| enter   | Switch to task (worktree) |
-| o       | Open task in Linear       |
-| p       | Open PR in browser        |
-| r       | Refresh                   |
-| q / esc | Quit                      |
+| Key     | Action                        |
+| ------- | ----------------------------- |
+| ↑/↓     | Navigate                      |
+| enter   | Open task/review (worktree)   |
+| f       | Launch AI fix agent           |
+| x       | Kill tmux session             |
+| d       | Delete worktree               |
+| c       | Clean stale worktrees         |
+| o       | Open task in Linear           |
+| p       | Open PR in browser            |
+| r       | Refresh                       |
+| q / esc | Quit                          |
+
+```
+jora add <path-or-url>   # register a repo
+jora remove <name>       # unregister a repo
+jora auth                # set Linear API key + check GitHub auth
+```
 
 Worktrees are created at `~/.jora/worktrees/<repo>/<task-key>/`.
 
