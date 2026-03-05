@@ -35,7 +35,7 @@ _jora() {
     case $words[2] in
       remove) compadd $(ls ~/.jora/repos/ 2>/dev/null) ;;
       add) _directories ;;
-      init) compadd zsh ;;
+      init) ;;
     esac
   fi
 }
@@ -72,14 +72,16 @@ class State:
     review_prs: List[Dict] = field(default_factory=list)
     review_titles: Dict[str, str] = field(default_factory=dict)
     _done: threading.Event = field(default_factory=threading.Event)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def rebuild(self):
-        worktrees = list_worktrees()
-        sessions = tmux.list_sessions()
-        self.menu.sections = _build(
-            self.tasks, self.prs_by_task, self.review_prs, self.review_titles,
-            worktrees, sessions,
-        )
+        with self._lock:
+            worktrees = list_worktrees()
+            sessions = tmux.list_sessions()
+            self.menu.sections = _build(
+                self.tasks, self.prs_by_task, self.review_prs, self.review_titles,
+                worktrees, sessions,
+            )
 
     def start_loading(self):
         self._done.clear()
@@ -184,7 +186,7 @@ def _parse_args():
     parser = argparse.ArgumentParser(prog="jora", description="Linear task switcher with git worktrees")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("init", help="print shell init script")
+    sub.add_parser("init", help="print shell init script (zsh)")
     auth_p = sub.add_parser("auth", help="set Linear API key")
     auth_p.add_argument("--reset", action="store_true", help="replace existing key")
 
@@ -219,7 +221,7 @@ def main():
             sys.exit(1)
         try:
             name = LinearClient(key).whoami()
-            keychain.set("linear", key)
+            keychain.store("linear", key)
             print(f"Authenticated as {name}")
         except Exception as e:
             print(f"Invalid key: {e}", file=sys.stderr)

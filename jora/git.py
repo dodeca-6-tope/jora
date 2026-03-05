@@ -165,12 +165,16 @@ def clean_worktrees() -> List[str]:
     if not all_wts:
         return []
 
-    # Fetch once per repo (not per worktree)
-    for repo_name in {name for name, _ in all_wts}:
+    # Fetch once per repo (not per worktree), in parallel
+    def fetch_repo(repo_name):
         rp = repo_path(repo_name)
         if rp:
             base = _default_branch(str(rp))
             subprocess.run(["git", "fetch", "origin", base], cwd=str(rp), capture_output=True)
+
+    repo_names = {name for name, _ in all_wts}
+    with ThreadPoolExecutor(max_workers=min(len(repo_names), 8)) as pool:
+        list(pool.map(fetch_repo, repo_names))
 
     def should_clean(pair):
         repo_name, wt = pair

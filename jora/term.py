@@ -189,11 +189,40 @@ class Menu:
             idx -= len(sec.rows)
         return None
 
+    def _row_at(self, idx: int) -> Optional[Row]:
+        i = idx
+        for sec in self.sections:
+            if i < len(sec.rows):
+                return sec.rows[i]
+            i -= len(sec.rows)
+        return None
+
+    def _index_of_key(self, key: str) -> Optional[int]:
+        idx = 0
+        for sec in self.sections:
+            for row in sec.rows:
+                if row.key == key:
+                    return idx
+                idx += 1
+        return None
+
+    def stabilize_cursor(self):
+        """Restore cursor to the previously selected row by key, or clamp."""
+        total = self._total_rows
+        if not total:
+            return
+        prev = self._row_at(self._cursor)
+        if prev:
+            found = self._index_of_key(prev.key)
+            if found is not None:
+                self._cursor = found
+                return
+        self._cursor = max(0, min(self._cursor, total - 1))
+
     def tick(self) -> Optional[str]:
         """Draw, read one key, return key or None. Handles navigation internally."""
         total = self._total_rows
-        if total:
-            self._cursor = max(0, min(self._cursor, total - 1))
+        self.stabilize_cursor()
 
         if self.loading:
             self._spin += 1
@@ -312,7 +341,7 @@ def _pick_loop(title: str, items: List[str]) -> Optional[int]:
             cursor = max(0, cursor - 1)
         elif key == "down":
             cursor = min(len(items) - 1, cursor + 1)
-        elif key in ("enter", "s"):
+        elif key == "enter":
             return cursor
         elif key in ("esc", "q"):
             return None

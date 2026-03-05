@@ -13,7 +13,7 @@ def get(account: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def set(account: str, value: str):
+def store(account: str, value: str):
     subprocess.run(
         ["security", "add-generic-password", "-s", _SERVICE, "-a", account, "-w", value, "-U"],
         capture_output=True,
