@@ -235,29 +235,22 @@ class State:
                 task_id.lower(), task, worktrees, sessions,
                 [Select(), Fix(), Kill(), Open(), PR(), Refresh(), Clean(), Quit()],
             ))
-        if task_rows:
-            sections.append(Section(f"Tasks — {len(task_rows)}", task_rows))
+        sections.append(Section(f"Tasks — {len(task_rows)}", task_rows, "No tasks"))
 
         review_rows = []
-        hidden = 0
         for pr in self._review_prs:
             ticket = self._pr_ticket(pr)
             if not ticket:
-                hidden += 1
                 continue
             task = tasks_by_id.get(ticket)
             if not task:
-                hidden += 1
                 continue
             review_rows.append(self._make_row(
                 ticket[:9], task["title"], pr,
                 f"review-{pr['number']}", pr, worktrees, sessions,
                 [Select(), Kill(), Delete(), PR(), Refresh(), Clean(), Quit()],
             ))
-        if review_rows or hidden:
-            label = f"Review — {len(review_rows)}"
-            if hidden:
-                label += f" ({hidden} hidden)"
-            sections.append(Section(label, review_rows))
+        if self._review_prs:
+            sections.append(Section(f"Review — {len(review_rows)}", review_rows, "Nothing to review"))
 
         return sections

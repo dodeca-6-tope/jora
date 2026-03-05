@@ -23,6 +23,7 @@ _DIM = "\033[90m"
 _GREEN = "\033[32m"
 _RED = "\033[31m"
 _BOLD = "\033[1m"
+_ITALIC = "\033[3m"
 _RESET = "\033[0m"
 _SPINNER = r"-\|/"
 _PREFIX = 16  # visible chars before title: "> ✓ ✗ LTXD-408* "
@@ -153,6 +154,7 @@ def _render(lines: list[str]):
 class Section:
     label: str
     rows: List[Row] = field(default_factory=list)
+    subtitle: str = ""
 
 
 @dataclass
@@ -290,6 +292,8 @@ class Menu:
             if i > 0:
                 lines.append("")
             lines.append(f"  {_DIM}{sec.label}{_RESET}")
+            if sec.subtitle and not sec.rows:
+                lines.append(f"      {_DIM}{_ITALIC}{sec.subtitle}{_RESET}")
             for row in sec.rows:
                 lines.append(_format_row(row, flat_idx == self._cursor))
                 flat_idx += 1
