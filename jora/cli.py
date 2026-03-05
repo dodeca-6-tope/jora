@@ -1,28 +1,22 @@
 """Interactive task picker UI."""
 
 import argparse
+import re
 import sys
 import threading
-import webbrowser
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Dict, List
 
-from jora.git import (
-    add_repo,
-    clean_worktrees,
-    find_worktree,
-    is_worktree_clean,
-    known_repos,
-    list_worktrees,
-    remove_repo,
-    repo_path,
-    switch_to_task,
-)
-from jora import agent, keychain, tmux
+from jora.git import known_repos, list_worktrees, repo_path, add_repo, remove_repo
+from jora import keychain, tmux
 from jora.linear import LinearClient
-from jora.github import analyze_ci, analyze_reviews, fetch_prs, match_prs_to_tasks
-from jora.term import Menu, Row, pick, suspend, resume
+from jora.github import analyze_ci, analyze_reviews, fetch_prs, fetch_review_prs, match_prs_to_tasks, repo_slug, warm_gh_user
+from jora.term import Menu, Row, Section
+from jora.actions import (
+    TaskSelect, TaskOpen, TaskPR, TaskFix, TaskKill,
+    ReviewSelect, ReviewPR, ReviewKill, ReviewDelete,
+    Clean, Refresh, QuitAction, Quit,
+)
 
 # -- Shell init (jora init <shell>) ------------------------------------------
 
@@ -53,6 +47,20 @@ compdef _jora jora
 
 _REVIEW_MARK = {"APPROVED": "ok", "CHANGES_REQUESTED": "fail"}
 _CI_MARK = {"SUCCESS": "ok", "FAILURE": "fail"}
+_TICKET_RE = re.compile(r"[A-Z]+-\d+", re.IGNORECASE)
+
+_SHARED = [Refresh(), Clean(), QuitAction()]
+_TASK_ACTIONS = [TaskSelect(), TaskFix(), TaskKill(), TaskOpen(), TaskPR(), *_SHARED]
+_REVIEW_ACTIONS = [ReviewSelect(), ReviewKill(), ReviewDelete(), ReviewPR(), *_SHARED]
+
+
+def _pr_ticket(pr):
+    """Extract ticket ID from PR title/branch, or None."""
+    for field in ("title", "headRefName"):
+        m = _TICKET_RE.search(pr.get(field, ""))
+        if m:
+            return m.group(0).upper()
+    return None
 
 
 @dataclass
@@ -61,17 +69,20 @@ class State:
     menu: Menu
     tasks: List[Dict] = field(default_factory=list)
     prs_by_task: Dict[str, List[Dict]] = field(default_factory=dict)
-    worktrees: Dict[str, Path] = field(default_factory=dict)
-    sessions: set = field(default_factory=set)
-    prs_ready: threading.Event = field(default_factory=threading.Event)
+    review_prs: List[Dict] = field(default_factory=list)
+    review_titles: Dict[str, str] = field(default_factory=dict)
+    _done: threading.Event = field(default_factory=threading.Event)
 
     def rebuild(self):
-        self.worktrees = list_worktrees()
-        self.sessions = tmux.list_sessions()
-        self.menu.rows = _build_rows(self.tasks, self.prs_by_task, self.worktrees, self.sessions)
+        worktrees = list_worktrees()
+        sessions = tmux.list_sessions()
+        self.menu.sections = _build(
+            self.tasks, self.prs_by_task, self.review_prs, self.review_titles,
+            worktrees, sessions,
+        )
 
     def start_loading(self):
-        self.prs_ready.clear()
+        self._done.clear()
 
         def load_tasks():
             try:
@@ -85,180 +96,77 @@ class State:
                 [t["identifier"] for t in self.tasks], fetch_prs(),
             )
             self.rebuild()
-            self.prs_ready.set()
+
+        def load_reviews():
+            slugs = [s for name in known_repos() if (rp := repo_path(name)) and (s := repo_slug(str(rp)))]
+            self.review_prs = fetch_review_prs(slugs)
+            task_ids = {t["identifier"] for t in self.tasks}
+            missing = {_pr_ticket(pr) for pr in self.review_prs if _pr_ticket(pr)} - task_ids
+            if missing:
+                self.review_titles = self.linear.fetch_issue_titles(list(missing))
+            self.rebuild()
 
         def go():
-            t = threading.Thread(target=load_tasks, daemon=True)
-            t.start()
-            t.join()  # prs depend on tasks
-            threading.Thread(target=load_prs, daemon=True).start()
+            threading.Thread(target=warm_gh_user, daemon=True).start()
+            load_tasks()
+            t1 = threading.Thread(target=load_prs, daemon=True)
+            t2 = threading.Thread(target=load_reviews, daemon=True)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+            self._done.set()
 
         threading.Thread(target=go, daemon=True).start()
 
 
-def _build_rows(tasks, prs_by_task, worktrees, sessions):
-    rows = []
+def _pr_marks(pr):
+    if not pr:
+        return ()
+    rv = _REVIEW_MARK.get(analyze_reviews(pr.get("reviews", [])), "neutral")
+    ci = _CI_MARK.get(analyze_ci(pr.get("statusCheckRollup", [])), "neutral")
+    return (rv, ci)
+
+
+def _make_row(key, title, pr, wt_key, data, worktrees, sessions):
+    return Row(
+        key=key,
+        title=title,
+        marks=_pr_marks(pr),
+        worktree=wt_key in worktrees,
+        session=tmux.session_name(wt_key) in sessions,
+        data=data,
+    )
+
+
+def _build(tasks, prs_by_task, review_prs, review_titles, worktrees, sessions):
+    """Build menu sections. Each Row carries its backing data."""
+    sections = []
+    tasks_by_id = {t["identifier"]: t for t in tasks}
+
+    task_rows = []
     for task in tasks:
-        prs = prs_by_task.get(task["identifier"], [])
-        pr = prs[0] if prs else None
-        if pr:
-            rv = _REVIEW_MARK.get(analyze_reviews(pr.get("reviews", [])), "neutral")
-            ci = _CI_MARK.get(analyze_ci(pr.get("statusCheckRollup", [])), "neutral")
-            marks = (rv, ci)
-        else:
-            marks = ()
-        task_lower = task["identifier"].lower()
-        rows.append(Row(
-            key=task["identifier"][:9],
-            title=task.get("title", "No title"),
-            marks=marks,
-            worktree=task_lower in worktrees,
-            session=tmux.session_name(task_lower) in sessions,
+        pr = next(iter(prs_by_task.get(task["identifier"], [])), None)
+        task_id = task["identifier"]
+        task_rows.append(_make_row(
+            task_id[:9], task.get("title", "No title"), pr,
+            task_id.lower(), task, worktrees, sessions,
         ))
-    return rows
+    if task_rows:
+        sections.append(Section(f"Tasks — {len(task_rows)}", task_rows, _TASK_ACTIONS))
 
+    review_rows = []
+    for pr, ticket in [(pr, _pr_ticket(pr)) for pr in review_prs if _pr_ticket(pr)]:
+        task = tasks_by_id.get(ticket)
+        title = task["title"] if task else review_titles.get(ticket, pr["title"])
+        review_rows.append(_make_row(
+            ticket[:9], title, pr,
+            f"review-{pr['number']}", pr, worktrees, sessions,
+        ))
+    if review_rows:
+        sections.append(Section(f"Review — {len(review_rows)}", review_rows, _REVIEW_ACTIONS))
 
-# -- Action handlers ---------------------------------------------------------
-# Each returns "continue", "break", or "return".
-
-def _ensure_worktree(s, task_id):
-    """Return worktree path, creating if needed. None on failure/cancel."""
-    wt = find_worktree(task_id)
-    if wt:
-        return wt
-
-    repos = known_repos()
-    if not repos:
-        s.menu.message = "No repos. Run: jora add <path>"
-        return None
-
-    idx = pick(f"Repo for {task_id}", repos)
-    if idx is None:
-        return None
-    repo = repo_path(repos[idx])
-
-    try:
-        return s.menu.run_blocking(
-            f"Creating worktree for {task_id}",
-            lambda: switch_to_task(task_id, repo),
-        )
-    except Exception as e:
-        s.menu.message = f"Error: {e}"
-        return None
-
-
-def _on_select(s):
-    task_id = s.tasks[s.menu.selected]["identifier"]
-    name = tmux.session_name(task_id)
-
-    if not tmux.has_session(name):
-        wt = _ensure_worktree(s, task_id)
-        if not wt:
-            return "continue"
-        try:
-            tmux.create_session(name, str(wt))
-        except Exception as e:
-            s.menu.message = f"Error creating session: {e}"
-            return "continue"
-
-    suspend()
-    tmux.attach_session(name)
-    resume()
-    s.rebuild()
-    return "continue"
-
-
-def _on_open(s):
-    webbrowser.open(s.tasks[s.menu.selected]["url"])
-    return "continue"
-
-
-def _on_pr(s):
-    task_prs = s.prs_by_task.get(s.tasks[s.menu.selected]["identifier"], [])
-    if task_prs:
-        webbrowser.open(task_prs[0]["url"])
-    else:
-        s.menu.message = "No PR for this task"
-    return "continue"
-
-
-def _on_clean(s):
-    try:
-        before = set(s.worktrees.keys())
-        n = s.menu.run_blocking("Cleaning worktrees", clean_worktrees)
-        after = set(list_worktrees().keys())
-        for removed_key in before - after:
-            name = tmux.session_name(removed_key)
-            if tmux.has_session(name):
-                tmux.kill_session(name)
-        s.menu.message = f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
-        if n:
-            s.rebuild()
-    except Exception as e:
-        s.menu.message = f"Error: {e}"
-    return "continue"
-
-
-def _on_refresh(s):
-    s.menu.loading = True
-    s.start_loading()
-    return "continue"
-
-
-def _on_fix(s):
-    task = s.tasks[s.menu.selected]
-    task_id = task["identifier"]
-    name = tmux.session_name(task_id)
-
-    if tmux.has_session(name):
-        s.menu.message = "Session already running — use ⏎ to attach"
-        return "continue"
-
-    wt = find_worktree(task_id)
-    if wt and not is_worktree_clean(wt):
-        s.menu.message = "Worktree has changes — use ⏎ to attach"
-        return "continue"
-
-    if not wt:
-        wt = _ensure_worktree(s, task_id)
-        if not wt:
-            return "continue"
-
-    try:
-        tmux.create_session(name, str(wt))
-    except Exception as e:
-        s.menu.message = f"Error creating session: {e}"
-        return "continue"
-
-    tmux.send_keys(name, agent.command(task_id))
-
-    s.rebuild()
-    return "continue"
-
-
-def _on_kill(s):
-    task_id = s.tasks[s.menu.selected]["identifier"]
-    name = tmux.session_name(task_id)
-    if not tmux.has_session(name):
-        s.menu.message = "No session for this task"
-        return "continue"
-    try:
-        tmux.kill_session(name)
-    except Exception as e:
-        s.menu.message = f"Error killing session: {e}"
-    s.rebuild()
-    return "continue"
-
-
-_ACTIONS = {
-    "select": _on_select,
-    "open": _on_open,
-    "pr": _on_pr,
-    "fix": _on_fix,
-    "kill": _on_kill,
-    "clean": _on_clean,
-    "refresh": _on_refresh,
-}
+    return sections
 
 
 # -- Entry point --------------------------------------------------------------
@@ -334,27 +242,28 @@ def main():
     linear = LinearClient(api_key)
 
     with Menu(loading=True) as menu:
-        s = State(linear=linear, menu=menu,
-                  worktrees=list_worktrees(), sessions=tmux.list_sessions())
+        s = State(linear=linear, menu=menu)
         s.start_loading()
 
-        while True:
-            menu.loading = not s.prs_ready.is_set()
+        try:
+            while True:
+                menu.loading = not s._done.is_set()
 
-            try:
-                action = menu.tick()
-            except KeyboardInterrupt:
-                break
-
-            if action is None:
-                continue
-            if action == "quit":
-                break
-
-            handler = _ACTIONS.get(action)
-            if handler:
-                result = handler(s)
-                if result == "return":
-                    return
-                if result == "break":
+                try:
+                    key = menu.tick()
+                except KeyboardInterrupt:
                     break
+
+                if key is None:
+                    continue
+
+                sec = menu._selected_section()
+                row = menu._selected_row()
+                if not sec or not row:
+                    continue
+                for action in sec.actions:
+                    if action.matches(key):
+                        action.run(s, row.data)
+                        break
+        except Quit:
+            pass

@@ -39,3 +39,20 @@ class LinearClient:
         """
         result = self._graphql(query)
         return result.get("viewer", {}).get("assignedIssues", {}).get("nodes", [])
+
+    def fetch_issue_titles(self, identifiers: List[str]) -> Dict[str, str]:
+        """Fetch {identifier: title} for a list of issue identifiers."""
+        if not identifiers:
+            return {}
+        aliases = []
+        for i, ident in enumerate(identifiers):
+            aliases.append(f'i{i}: issue(id: "{ident}") {{ identifier title }}')
+        query = "{ " + " ".join(aliases) + " }"
+        try:
+            result = self._graphql(query)
+            return {
+                v["identifier"]: v["title"]
+                for v in result.values() if v
+            }
+        except Exception:
+            return {}

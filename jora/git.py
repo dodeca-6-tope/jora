@@ -70,11 +70,6 @@ def repo_path(repo_name: str) -> Optional[Path]:
     return p if p.exists() else None
 
 
-def detect_active_task() -> str:
-    """If cwd is inside a jora worktree, return the task key (lowercase)."""
-    cwd = Path.cwd()
-    return cwd.name if cwd.is_relative_to(_WORKTREES_DIR) else ""
-
 
 def list_worktrees() -> Dict[str, Path]:
     """Return {task_key: worktree_path} for all jora worktrees. No subprocesses."""
@@ -147,10 +142,16 @@ def is_worktree_clean(wt: Path) -> bool:
     return merged.returncode == 0
 
 
-def clean_worktrees() -> int:
-    """Remove worktrees with no dirty files and no unpushed commits. Returns count removed."""
+def clean_worktrees() -> List[str]:
+    """Remove worktrees whose PR has been merged, or that have no dirty files and no unpushed commits.
+
+    Returns list of removed worktree keys (e.g. ['ltxd-408', 'review-772']).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from jora.github import is_pr_merged
+
     if not _WORKTREES_DIR.exists():
-        return 0
+        return []
 
     # Collect all worktrees
     all_wts = []
@@ -162,7 +163,7 @@ def clean_worktrees() -> int:
                 all_wts.append((repo_dir.name, wt))
 
     if not all_wts:
-        return 0
+        return []
 
     # Fetch once per repo (not per worktree)
     for repo_name in {name for name, _ in all_wts}:
@@ -171,41 +172,30 @@ def clean_worktrees() -> int:
             base = _default_branch(str(rp))
             subprocess.run(["git", "fetch", "origin", base], cwd=str(rp), capture_output=True)
 
-    # Check cleanliness in parallel
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=min(len(all_wts), 8)) as pool:
-        results = list(pool.map(lambda pair: is_worktree_clean(pair[1]), all_wts))
-
-    # Remove clean worktrees (sequential — touches shared repo state)
-    removed = 0
-    for (repo_name, wt), is_clean in zip(all_wts, results):
-        if not is_clean:
-            continue
+    def should_clean(pair):
+        repo_name, wt = pair
+        rp = repo_path(repo_name)
+        if not rp:
+            return False
+        if wt.name.startswith("review-"):
+            return is_pr_merged(str(rp), wt.name.removeprefix("review-"))
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(wt), capture_output=True, text=True,
         ).stdout.strip()
+        if branch and branch != "HEAD" and is_pr_merged(str(rp), branch):
+            return True
+        return is_worktree_clean(wt)
 
-        git_dir = repo_path(repo_name)
-        if git_dir:
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", str(wt)],
-                cwd=str(git_dir), capture_output=True,
-            )
-            base = _default_branch(str(git_dir))
-            merged = subprocess.run(
-                ["git", "branch", "--merged", f"origin/{base}"],
-                cwd=str(git_dir), capture_output=True, text=True,
-            )
-            if branch in merged.stdout:
-                subprocess.run(
-                    ["git", "branch", "-d", branch],
-                    cwd=str(git_dir), capture_output=True,
-                )
-        else:
-            import shutil
-            shutil.rmtree(wt, ignore_errors=True)
-        removed += 1
+    with ThreadPoolExecutor(max_workers=min(len(all_wts), 8)) as pool:
+        results = list(pool.map(should_clean, all_wts))
+
+    removed = []
+    for (repo_name, wt), clean in zip(all_wts, results):
+        if not clean:
+            continue
+        removed.append(wt.name)
+        _remove_wt(repo_name, wt)
 
     # Remove empty repo dirs under worktrees/
     for repo_dir in _WORKTREES_DIR.iterdir():
@@ -213,6 +203,67 @@ def clean_worktrees() -> int:
             repo_dir.rmdir()
 
     return removed
+
+
+def _remove_wt(repo_name: str, wt: Path):
+    """Remove a single worktree directory and its branch."""
+    import shutil
+
+    git_dir = repo_path(repo_name)
+    if not git_dir:
+        shutil.rmtree(wt, ignore_errors=True)
+        return
+    branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(wt), capture_output=True, text=True,
+    ).stdout.strip()
+    r = subprocess.run(
+        ["git", "worktree", "remove", "--force", "--force", str(wt)],
+        cwd=str(git_dir), capture_output=True,
+    )
+    if r.returncode != 0:
+        shutil.rmtree(wt, ignore_errors=True)
+        subprocess.run(["git", "worktree", "prune"], cwd=str(git_dir), capture_output=True)
+    if branch and branch != "HEAD":
+        subprocess.run(["git", "branch", "-D", branch], cwd=str(git_dir), capture_output=True)
+
+
+def remove_worktree(key: str):
+    """Remove a worktree by key (e.g. 'review-123')."""
+    wt = find_worktree(key)
+    if not wt:
+        raise ValueError(f"No worktree for {key}")
+    _remove_wt(wt.parent.name, wt)
+    parent = wt.parent
+    if parent.exists() and parent.is_dir() and not any(parent.iterdir()):
+        parent.rmdir()
+
+
+def checkout_pr(pr_number: int, rp: Path) -> Path:
+    """Create a worktree and check out a PR via gh. Returns the worktree path."""
+    key = f"review-{pr_number}"
+    existing = find_worktree(key)
+    if existing:
+        return existing
+
+    repo_name = rp.name
+    wt = _WORKTREES_DIR / repo_name / key
+    wt.parent.mkdir(parents=True, exist_ok=True)
+
+    subprocess.run(
+        ["git", "worktree", "add", str(wt), "--detach"],
+        capture_output=True, check=True, cwd=str(rp),
+    )
+    r = subprocess.run(
+        ["gh", "pr", "checkout", str(pr_number)],
+        capture_output=True, text=True, cwd=str(wt),
+    )
+    if r.returncode != 0:
+        import shutil
+        shutil.rmtree(wt, ignore_errors=True)
+        subprocess.run(["git", "worktree", "prune"], capture_output=True, cwd=str(rp))
+        raise RuntimeError(r.stderr.strip() or "gh pr checkout failed")
+    return wt
 
 
 def switch_to_task(task_key: str, repo_path: Path) -> Path:

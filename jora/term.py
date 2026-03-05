@@ -40,6 +40,7 @@ class Row:
     marks: Tuple[str, ...] = ()  # "ok", "fail", "neutral"
     worktree: bool = False
     session: bool = False
+    data: object = None  # opaque payload for action handlers
 
 
 # -- Setup / teardown --------------------------------------------------------
@@ -140,17 +141,22 @@ def _render(lines: list[str]):
 
 # -- Menu --------------------------------------------------------------------
 
-_KEY_TO_ACTION = {
-    "enter": "select", "s": "select",
-    "o": "open", "p": "pr", "r": "refresh",
-    "f": "fix", "x": "kill",
-    "c": "clean", "q": "quit", "esc": "quit",
-}
+
+
+@dataclass
+class Section:
+    label: str
+    rows: List[Row] = field(default_factory=list)
+    actions: list = field(default_factory=list)
+
+    @property
+    def help(self) -> str:
+        return "  ".join(f"{a.key} {a.label}" for a in self.actions)
 
 
 @dataclass
 class Menu:
-    rows: List[Row] = field(default_factory=list)
+    sections: List[Section] = field(default_factory=list)
     loading: bool = False
     message: str = ""
     _cursor: int = 0
@@ -163,10 +169,31 @@ class Menu:
     def __exit__(self, *_):
         _cleanup()
 
+    @property
+    def _total_rows(self) -> int:
+        return sum(len(sec.rows) for sec in self.sections)
+
+    def _selected_section(self) -> Optional[Section]:
+        idx = self._cursor
+        for sec in self.sections:
+            if idx < len(sec.rows):
+                return sec
+            idx -= len(sec.rows)
+        return None
+
+    def _selected_row(self) -> Optional[Row]:
+        idx = self._cursor
+        for sec in self.sections:
+            if idx < len(sec.rows):
+                return sec.rows[idx]
+            idx -= len(sec.rows)
+        return None
+
     def tick(self) -> Optional[str]:
-        """Draw, read one key, return action or None."""
-        if self.rows:
-            self._cursor = max(0, min(self._cursor, len(self.rows) - 1))
+        """Draw, read one key, return key or None. Handles navigation internally."""
+        total = self._total_rows
+        if total:
+            self._cursor = max(0, min(self._cursor, total - 1))
 
         if self.loading:
             self._spin += 1
@@ -179,21 +206,25 @@ class Menu:
 
         self.message = ""
 
-        if key == "up" and self.rows:
+        if key == "up" and total:
             self._cursor = max(0, self._cursor - 1)
             return None
-        if key == "down" and self.rows:
-            self._cursor = min(len(self.rows) - 1, self._cursor + 1)
+        if key == "down" and total:
+            self._cursor = min(total - 1, self._cursor + 1)
             return None
 
-        return _KEY_TO_ACTION.get(key)
+        return key
 
     @property
     def selected(self) -> int:
         return self._cursor
 
-    def run_blocking(self, text: str, fn: Callable):
-        """Run fn() in a background thread with a spinner. Returns result or raises."""
+    def run_blocking(self, text: str, fn: Callable, inline: bool = False):
+        """Run fn() in a background thread with a spinner. Returns result or raises.
+
+        If inline=False (default), replaces screen with spinner.
+        If inline=True, shows spinner in header while keeping the menu visible.
+        """
         result = [None]
         error = [None]
 
@@ -203,13 +234,23 @@ class Menu:
             except Exception as e:
                 error[0] = e
 
+        prev_loading = self.loading
+        prev_message = self.message
         t = threading.Thread(target=work, daemon=True)
         t.start()
         frame = 0
         while t.is_alive():
             frame += 1
-            _render([f"{text} {_SPINNER[frame // 4 % len(_SPINNER)]}"])
+            if inline:
+                self.loading = True
+                self._spin += 1
+                self.message = text
+                self._draw()
+            else:
+                _render([f"{text} {_SPINNER[frame // 4 % len(_SPINNER)]}"])
             t.join(timeout=1 / 60)
+        self.loading = prev_loading
+        self.message = prev_message
 
         if error[0] is not None:
             raise error[0]
@@ -217,12 +258,19 @@ class Menu:
 
     def _draw(self):
         spinner = f" {_DIM}{_SPINNER[self._spin // 4 % len(_SPINNER)]}{_RESET}" if self.loading else ""
-        lines = [f"{_BOLD}Jora{_RESET} — {len(self.rows)} tasks{spinner}", ""]
-        for i, row in enumerate(self.rows):
-            lines.append(_format_row(row, i == self._cursor))
-        if self.rows:
+        lines = [f"{_BOLD}Jora{_RESET}{spinner}", ""]
+        flat_idx = 0
+        for i, sec in enumerate(self.sections):
+            if i > 0:
+                lines.append("")
+            lines.append(f"  {_DIM}{sec.label}{_RESET}")
+            for row in sec.rows:
+                lines.append(_format_row(row, flat_idx == self._cursor))
+                flat_idx += 1
+        sec = self._selected_section()
+        if sec:
             lines.append("")
-            lines.append(f"{_DIM}⏎ open  f fix  x kill  o linear  p PR  r refresh  c clean  q quit{_RESET}")
+            lines.append(f"{_DIM}{sec.help}{_RESET}")
         if self.message:
             lines.append("")
             lines.append(self.message)
