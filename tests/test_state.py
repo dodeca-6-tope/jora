@@ -349,6 +349,17 @@ def test_open_task_reuses_existing_worktree(tmp_path):
     assert s.has_session("proj-1")
 
 
+def test_open_task_reuses_session(tmp_path):
+    # User opens the same task twice without killing — session is reused, not duplicated
+    _init_repo(tmp_path, "myrepo")
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+
+    s.open_task("proj-1", "myrepo")
+    s.open_task("proj-1", "myrepo")
+
+    assert s.has_session("proj-1")
+
+
 def test_open_task_invalid_repo(tmp_path):
     # User tries to open a task with a repo that isn't registered
     s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
@@ -434,6 +445,21 @@ def test_delete_worktree_removes_worktree_and_session(tmp_path):
     s.delete_worktree("proj-1")
     assert not s.has_worktree("proj-1")
     assert not s.has_session("proj-1")
+    assert "Removed" in s.menu.message
+
+
+def test_delete_worktree_without_session(tmp_path):
+    # User deletes a worktree that has no running session — worktree removed, no session error
+    _init_repo(tmp_path, "myrepo")
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+
+    s.open_task("proj-1", "myrepo")
+    s.kill_session("proj-1")
+    assert s.has_worktree("proj-1")
+    assert not s.has_session("proj-1")
+
+    s.delete_worktree("proj-1")
+    assert not s.has_worktree("proj-1")
     assert "Removed" in s.menu.message
 
 
