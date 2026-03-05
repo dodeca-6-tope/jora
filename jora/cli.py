@@ -133,7 +133,7 @@ def main():
                 continue
             if not sec or not row:
                 continue
-            for action in sec.actions:
+            for action in row.actions:
                 if action.matches(key):
                     if action.run(s, row) == "exit":
                         return

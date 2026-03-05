@@ -282,6 +282,62 @@ def test_row_properties(tmp_path):
     assert row.title == "No title"
 
 
+# -- Section help ------------------------------------------------------------
+
+def _row_help(s, row):
+    return "  ".join(a.label for a in row.actions if a.enabled(s, row))
+
+
+def test_task_row_actions(tmp_path):
+    # Task row shows available actions — no session/PR so kill and PR are hidden
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+
+    row = s.menu.sections[0].rows[0]
+    help_text = _row_help(s, row)
+    for label in ["open", "fix", "linear", "refresh", "clean", "quit"]:
+        assert label in help_text
+    assert "kill" not in help_text
+    assert "PR" not in help_text
+
+
+def test_task_row_actions_with_session(tmp_path):
+    # Task with active session shows kill
+    _init_repo(tmp_path, "myrepo")
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s.open_task("proj-1", "myrepo")
+
+    row = s.menu.sections[0].rows[0]
+    assert "kill" in _row_help(s, row)
+
+
+def test_task_row_actions_with_pr(tmp_path):
+    # Task with a PR shows PR action
+    pr = _make_pr(number=10, url="url1", branch="feature/proj-1")
+    s = _loaded_state(tmp_path,
+                      tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+                      prs_by_task={"PROJ-1": [pr]})
+
+    row = s.menu.sections[0].rows[0]
+    assert "PR" in _row_help(s, row)
+
+
+def test_review_row_actions(tmp_path):
+    # Review row shows delete instead of fix/linear
+    review_pr = _make_pr(number=99, title="[PROJ-1] change")
+    _fake_worktree(tmp_path, "repo", "review-99")
+    s = _loaded_state(tmp_path,
+                      tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+                      review_prs=[review_pr])
+
+    row = s.menu.sections[1].rows[0]
+    help_text = _row_help(s, row)
+    for label in ["open", "delete", "PR", "refresh", "clean", "quit"]:
+        assert label in help_text
+    assert "fix" not in help_text
+    assert "linear" not in help_text
+    assert "kill" not in help_text
+
+
 # -- open_review() -----------------------------------------------------------
 
 def test_open_review_creates_session_for_existing_worktree(tmp_path):

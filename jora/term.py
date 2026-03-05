@@ -42,6 +42,7 @@ class Row:
     worktree: bool = False
     session: bool = False
     data: object = None  # opaque payload for action handlers
+    actions: list = field(default_factory=list)
 
 
 # -- Setup / teardown --------------------------------------------------------
@@ -148,11 +149,6 @@ def _render(lines: list[str]):
 class Section:
     label: str
     rows: List[Row] = field(default_factory=list)
-    actions: list = field(default_factory=list)
-
-    @property
-    def help(self) -> str:
-        return "  ".join(f"{a.key} {a.label}" for a in self.actions)
 
 
 @dataclass
@@ -160,6 +156,7 @@ class Menu:
     sections: List[Section] = field(default_factory=list)
     loading: bool = False
     message: str = ""
+    state: object = None
     _cursor: int = 0
     _spin: int = 0
 
@@ -282,10 +279,11 @@ class Menu:
             for row in sec.rows:
                 lines.append(_format_row(row, flat_idx == self._cursor))
                 flat_idx += 1
-        cur_sec, _ = self._at(self._cursor)
-        if cur_sec:
+        cur_sec, cur_row = self._at(self._cursor)
+        if cur_sec and cur_row:
+            enabled = [a for a in cur_row.actions if a.enabled(self.state, cur_row)]
             lines.append("")
-            lines.append(f"{_DIM}{cur_sec.help}{_RESET}")
+            lines.append(f"{_DIM}{'  '.join(f'{a.key} {a.label}' for a in enabled)}{_RESET}")
         if self.message:
             lines.append("")
             lines.append(self.message)
