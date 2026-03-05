@@ -26,10 +26,10 @@ def _wait_done(s, timeout=5):
         time.sleep(0.01)
 
 
-def _make_pr(number=1, title="", url="", branch="", reviews=None, ci=None):
+def _make_pr(number=1, title="", url="", branch="", reviews=None, ci=None, repo_slug="org/repo"):
     return {
         "number": number, "title": title, "url": url, "body": "",
-        "headRefName": branch, "author": "", "repoSlug": "org/repo",
+        "headRefName": branch, "author": "", "repoSlug": repo_slug,
         "reviews": reviews or [], "statusCheckRollup": ci or [],
     }
 
@@ -280,6 +280,42 @@ def test_row_properties(tmp_path):
     assert row.key == "LONGPROJ-"
     assert row.wt_key == "longproj-123"
     assert row.title == "No title"
+
+
+# -- open_review() -----------------------------------------------------------
+
+def test_open_review_creates_session_for_existing_worktree(tmp_path):
+    # User selects a review PR that already has a checked-out worktree — session starts
+    _fake_worktree(tmp_path, "repo", "review-99")
+    pr = _make_pr(number=99, title="[PROJ-1] fix", branch="proj-1-fix")
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+                      review_prs=[pr])
+
+    s.open_review(pr)
+
+    assert s.has_session("review-99")
+
+
+def test_open_review_reuses_session(tmp_path):
+    # User opens the same review PR twice — session is reused, not duplicated
+    _fake_worktree(tmp_path, "repo", "review-99")
+    pr = _make_pr(number=99, title="[PROJ-1] fix", branch="proj-1-fix")
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+                      review_prs=[pr])
+
+    s.open_review(pr)
+    s.open_review(pr)
+
+    assert s.has_session("review-99")
+
+
+def test_open_review_invalid_repo(tmp_path):
+    # Review PR references a repo that isn't registered
+    pr = _make_pr(number=99, title="[PROJ-1] fix", repo_slug="org/unknown")
+    s = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+
+    with pytest.raises(ValueError, match="not registered"):
+        s.open_review(pr)
 
 
 # -- open_task() -------------------------------------------------------------
