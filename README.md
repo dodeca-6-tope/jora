@@ -20,7 +20,7 @@ Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/).
 jora
 ```
 
-Shows your tasks, PR status, and CI status. Pick a task to switch into its worktree.
+Shows your tasks, PR status, CI status, and review requests. Each task gets a git worktree and a tmux session — switch between them instantly.
 
 | Key     | Action                        |
 | ------- | ----------------------------- |
