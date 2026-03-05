@@ -10,7 +10,7 @@ from typing import Dict, List
 from jora.git import known_repos, list_worktrees, repo_path, add_repo, remove_repo
 from jora import keychain, tmux
 from jora.linear import LinearClient
-from jora.github import analyze_ci, analyze_reviews, fetch_prs, fetch_review_prs, match_prs_to_tasks, repo_slug, warm_gh_user
+from jora.github import GitHubClient
 from jora.term import Menu, Row, Section
 from jora.actions import (
     Select, Open, PR, Fix, Kill,
@@ -65,6 +65,7 @@ def _pr_ticket(pr):
 @dataclass
 class State:
     linear: LinearClient
+    github: GitHubClient
     menu: Menu
     tasks: List[Dict] = field(default_factory=list)
     prs_by_task: Dict[str, List[Dict]] = field(default_factory=dict)
@@ -77,10 +78,61 @@ class State:
         with self._lock:
             worktrees = list_worktrees()
             sessions = tmux.list_sessions()
-            self.menu.sections = _build(
-                self.tasks, self.prs_by_task, self.review_prs, self.review_titles,
-                worktrees, sessions,
-            )
+            self.menu.sections = self._build(worktrees, sessions)
+
+    def _pr_marks(self, pr):
+        if not pr:
+            return ()
+        rv = _REVIEW_MARK.get(self.github.analyze_reviews(pr.get("reviews", [])), "neutral")
+        ci = _CI_MARK.get(self.github.analyze_ci(pr.get("statusCheckRollup", [])), "neutral")
+        return (rv, ci)
+
+    def _make_row(self, key, title, pr, wt_key, data, worktrees, sessions):
+        return Row(
+            key=key,
+            title=title,
+            wt_key=wt_key,
+            marks=self._pr_marks(pr),
+            worktree=wt_key in worktrees,
+            session=tmux.session_name(wt_key) in sessions,
+            data=data,
+        )
+
+    def _build(self, worktrees, sessions):
+        sections = []
+        tasks_by_id = {t["identifier"]: t for t in self.tasks}
+
+        task_rows = []
+        for task in self.tasks:
+            pr = next(iter(self.prs_by_task.get(task["identifier"], [])), None)
+            task_id = task["identifier"]
+            task_rows.append(self._make_row(
+                task_id[:9], task.get("title", "No title"), pr,
+                task_id.lower(), task, worktrees, sessions,
+            ))
+        if task_rows:
+            sections.append(Section(f"Tasks — {len(task_rows)}", task_rows, _TASK_ACTIONS))
+
+        review_rows = []
+        hidden = 0
+        for pr in self.review_prs:
+            ticket = _pr_ticket(pr)
+            if not ticket:
+                hidden += 1
+                continue
+            task = tasks_by_id.get(ticket)
+            title = task["title"] if task else self.review_titles.get(ticket, "")
+            review_rows.append(self._make_row(
+                ticket[:9], title, pr,
+                f"review-{pr['number']}", pr, worktrees, sessions,
+            ))
+        if review_rows:
+            label = f"Review — {len(review_rows)}"
+            if hidden:
+                label += f" ({hidden} hidden)"
+            sections.append(Section(label, review_rows, _REVIEW_ACTIONS))
+
+        return sections
 
     def start_loading(self):
         self._done.clear()
@@ -93,14 +145,14 @@ class State:
             self.rebuild()
 
         def load_prs():
-            self.prs_by_task = match_prs_to_tasks(
-                [t["identifier"] for t in self.tasks], fetch_prs(),
+            self.prs_by_task = self.github.match_prs_to_tasks(
+                [t["identifier"] for t in self.tasks], self.github.fetch_prs(),
             )
             self.rebuild()
 
         def load_reviews():
-            slugs = [s for name in known_repos() if (rp := repo_path(name)) and (s := repo_slug(str(rp)))]
-            prs = fetch_review_prs(slugs)
+            slugs = [s for name in known_repos() if (rp := repo_path(name)) and (s := self.github.repo_slug(str(rp)))]
+            prs = self.github.fetch_review_prs(slugs)
             task_ids = {t["identifier"] for t in self.tasks}
             missing = {_pr_ticket(pr) for pr in prs if _pr_ticket(pr)} - task_ids
             titles = self.linear.fetch_issue_titles(list(missing)) if missing else {}
@@ -109,7 +161,7 @@ class State:
             self.rebuild()
 
         def go():
-            threading.Thread(target=warm_gh_user, daemon=True).start()
+            threading.Thread(target=self.github.warm, daemon=True).start()
             load_tasks()
             t1 = threading.Thread(target=load_prs, daemon=True)
             t2 = threading.Thread(target=load_reviews, daemon=True)
@@ -120,64 +172,6 @@ class State:
             self._done.set()
 
         threading.Thread(target=go, daemon=True).start()
-
-
-def _pr_marks(pr):
-    if not pr:
-        return ()
-    rv = _REVIEW_MARK.get(analyze_reviews(pr.get("reviews", [])), "neutral")
-    ci = _CI_MARK.get(analyze_ci(pr.get("statusCheckRollup", [])), "neutral")
-    return (rv, ci)
-
-
-def _make_row(key, title, pr, wt_key, data, worktrees, sessions):
-    return Row(
-        key=key,
-        title=title,
-        wt_key=wt_key,
-        marks=_pr_marks(pr),
-        worktree=wt_key in worktrees,
-        session=tmux.session_name(wt_key) in sessions,
-        data=data,
-    )
-
-
-def _build(tasks, prs_by_task, review_prs, review_titles, worktrees, sessions):
-    """Build menu sections. Each Row carries its backing data."""
-    sections = []
-    tasks_by_id = {t["identifier"]: t for t in tasks}
-
-    task_rows = []
-    for task in tasks:
-        pr = next(iter(prs_by_task.get(task["identifier"], [])), None)
-        task_id = task["identifier"]
-        task_rows.append(_make_row(
-            task_id[:9], task.get("title", "No title"), pr,
-            task_id.lower(), task, worktrees, sessions,
-        ))
-    if task_rows:
-        sections.append(Section(f"Tasks — {len(task_rows)}", task_rows, _TASK_ACTIONS))
-
-    review_rows = []
-    hidden = 0
-    for pr in review_prs:
-        ticket = _pr_ticket(pr)
-        if not ticket:
-            hidden += 1
-            continue
-        task = tasks_by_id.get(ticket)
-        title = task["title"] if task else review_titles.get(ticket, "")
-        review_rows.append(_make_row(
-            ticket[:9], title, pr,
-            f"review-{pr['number']}", pr, worktrees, sessions,
-        ))
-    if review_rows:
-        label = f"Review — {len(review_rows)}"
-        if hidden:
-            label += f" ({hidden} hidden)"
-        sections.append(Section(label, review_rows, _REVIEW_ACTIONS))
-
-    return sections
 
 
 # -- Entry point --------------------------------------------------------------
@@ -211,21 +205,25 @@ def main():
         if existing and not args.reset:
             try:
                 name = LinearClient(existing).whoami()
-                print(f"Authenticated as {name}")
+                print(f"Linear: authenticated as {name}")
             except Exception:
                 print("Stored key is invalid — run: jora auth --reset")
-            return
-        key = input("Linear API key (https://linear.app/settings/api): ").strip()
-        if not key:
-            print("No API key provided")
-            sys.exit(1)
+        else:
+            key = input("Linear API key (https://linear.app/settings/api): ").strip()
+            if not key:
+                print("No API key provided")
+                sys.exit(1)
+            try:
+                name = LinearClient(key).whoami()
+                keychain.store("linear", key)
+                print(f"Linear: authenticated as {name}")
+            except Exception as e:
+                print(f"Invalid key: {e}", file=sys.stderr)
+                sys.exit(1)
         try:
-            name = LinearClient(key).whoami()
-            keychain.store("linear", key)
-            print(f"Authenticated as {name}")
-        except Exception as e:
-            print(f"Invalid key: {e}", file=sys.stderr)
-            sys.exit(1)
+            print(f"GitHub: authenticated as {GitHubClient().whoami()}")
+        except Exception:
+            print("GitHub: not authenticated — run: gh auth login")
         return
 
     if args.command == "add":
@@ -251,9 +249,10 @@ def main():
         print("No API key — run: jora auth")
         sys.exit(1)
     linear = LinearClient(api_key)
+    github = GitHubClient()
 
     with Menu(loading=True) as menu:
-        s = State(linear=linear, menu=menu)
+        s = State(linear=linear, github=github, menu=menu)
         s.start_loading()
 
         while True:

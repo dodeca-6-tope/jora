@@ -142,13 +142,12 @@ def is_worktree_clean(wt: Path) -> bool:
     return merged.returncode == 0
 
 
-def clean_worktrees() -> List[str]:
+def clean_worktrees(github) -> List[str]:
     """Remove worktrees whose PR has been merged, or that have no dirty files and no unpushed commits.
 
     Returns list of removed worktree keys (e.g. ['ltxd-408', 'review-772']).
     """
     from concurrent.futures import ThreadPoolExecutor
-    from jora.github import is_pr_merged
 
     if not _WORKTREES_DIR.exists():
         return []
@@ -182,12 +181,12 @@ def clean_worktrees() -> List[str]:
         if not rp:
             return False
         if wt.name.startswith("review-"):
-            return is_pr_merged(str(rp), wt.name.removeprefix("review-"))
+            return github.is_pr_merged(str(rp), wt.name.removeprefix("review-"))
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(wt), capture_output=True, text=True,
         ).stdout.strip()
-        if branch and branch != "HEAD" and is_pr_merged(str(rp), branch):
+        if branch and branch != "HEAD" and github.is_pr_merged(str(rp), branch):
             return True
         return is_worktree_clean(wt)
 

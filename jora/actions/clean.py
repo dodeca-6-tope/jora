@@ -9,7 +9,7 @@ class Clean(Action):
 
     def run(self, s, _row):
         try:
-            removed = s.menu.run_blocking("Cleaning worktrees", clean_worktrees, inline=True)
+            removed = s.menu.run_blocking("Cleaning worktrees", lambda: clean_worktrees(s.github), inline=True)
             for key in removed:
                 name = tmux.session_name(key)
                 if tmux.has_session(name):
