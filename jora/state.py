@@ -19,14 +19,6 @@ _TASK_ACTIONS = [Select(), Fix(), Kill(), Open(), PR(), *_SHARED]
 _REVIEW_ACTIONS = [Select(), Kill(), Delete(), PR(), *_SHARED]
 
 
-def _pr_ticket(pr):
-    for field in ("title", "headRefName"):
-        m = _TICKET_RE.search(pr.get(field, ""))
-        if m:
-            return m.group(0).upper()
-    return None
-
-
 @dataclass
 class State:
     linear: LinearClient
@@ -63,6 +55,13 @@ class State:
             data=data,
         )
 
+    def _pr_ticket(self, pr):
+        for f in ("title", "headRefName"):
+            m = _TICKET_RE.search(pr.get(f, ""))
+            if m:
+                return m.group(0).upper()
+        return None
+
     def _build(self, worktrees, sessions):
         sections = []
         tasks_by_id = {t["identifier"]: t for t in self.tasks}
@@ -81,7 +80,7 @@ class State:
         review_rows = []
         hidden = 0
         for pr in self.review_prs:
-            ticket = _pr_ticket(pr)
+            ticket = self._pr_ticket(pr)
             if not ticket:
                 hidden += 1
                 continue
@@ -119,7 +118,7 @@ class State:
             slugs = [s for name in known_repos() if (rp := repo_path(name)) and (s := self.github.repo_slug(str(rp)))]
             prs = self.github.fetch_review_prs(slugs)
             task_ids = {t["identifier"] for t in self.tasks}
-            missing = {_pr_ticket(pr) for pr in prs if _pr_ticket(pr)} - task_ids
+            missing = {self._pr_ticket(pr) for pr in prs if self._pr_ticket(pr)} - task_ids
             titles = self.linear.fetch_issue_titles(list(missing)) if missing else {}
             self.review_prs = prs
             self.review_titles = titles
