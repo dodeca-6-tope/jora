@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+from abc import ABC, abstractmethod
 from typing import Dict, List
 
 _PR_FIELDS = """
@@ -49,7 +50,46 @@ query($q: String!) {
 """ % _PR_FIELDS
 
 
-class GitHubClient:
+class GitHub(ABC):
+    """GitHub API backend for PRs, reviews, and CI status."""
+
+    @abstractmethod
+    def whoami(self) -> str:
+        """Return the authenticated GitHub username."""
+
+    @abstractmethod
+    def warm(self):
+        """Pre-fetch and cache the current user login."""
+
+    @abstractmethod
+    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[Dict]]:
+        """Fetch open PRs authored by the current user, matched to task keys.
+
+        Returns {task_key: [matching_prs]}.
+        """
+
+    @abstractmethod
+    def fetch_review_prs(self, repo_slugs: List[str]) -> List[Dict]:
+        """Return open PRs needing the current user's review."""
+
+    @abstractmethod
+    def repo_slug(self, repo_dir: str) -> str:
+        """Return 'owner/repo' for a local git repo directory."""
+
+    @abstractmethod
+    def is_pr_merged(self, repo_dir: str, branch: str) -> bool:
+        """Check if the PR for a branch has been merged."""
+
+    @abstractmethod
+    def analyze_pr(self, pr: Dict) -> tuple:
+        """Return (review_status, ci_status) for a PR.
+
+        review_status: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or NO_REVIEWS.
+        ci_status: SUCCESS, FAILURE, PENDING, or NONE.
+        """
+
+
+class GitHubClient(GitHub):
     def __init__(self):
         self._login = None
 
@@ -71,7 +111,11 @@ class GitHubClient:
         except Exception:
             pass
 
-    def fetch_prs(self) -> List[Dict]:
+    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[Dict]]:
+        all_prs = self._fetch_authored_prs()
+        return self._match_prs_to_tasks(task_keys, all_prs)
+
+    def _fetch_authored_prs(self) -> List[Dict]:
         try:
             result = subprocess.run(
                 ["gh", "api", "graphql", "-f", f"query={_AUTHORED_QUERY}"],
@@ -140,7 +184,11 @@ class GitHubClient:
         except subprocess.SubprocessError:
             return False
 
-    def match_prs_to_tasks(self, task_keys: List[str], all_prs: List[Dict]) -> Dict[str, List[Dict]]:
+    def analyze_pr(self, pr: Dict) -> tuple:
+        return (self._analyze_reviews(pr.get("reviews", [])),
+                self._analyze_ci(pr.get("statusCheckRollup", [])))
+
+    def _match_prs_to_tasks(self, task_keys: List[str], all_prs: List[Dict]) -> Dict[str, List[Dict]]:
         result = {}
         for key in task_keys:
             pattern = re.compile(re.escape(key) + r"(?!\w)", re.IGNORECASE)
@@ -155,7 +203,7 @@ class GitHubClient:
                 result[key] = matches
         return result
 
-    def analyze_ci(self, checks: List[Dict]) -> str:
+    def _analyze_ci(self, checks: List[Dict]) -> str:
         if not checks:
             return "NONE"
         if all(c.get("conclusion") == "SUCCESS" for c in checks):
@@ -164,7 +212,7 @@ class GitHubClient:
             return "FAILURE"
         return "PENDING"
 
-    def analyze_reviews(self, reviews: List[Dict]) -> str:
+    def _analyze_reviews(self, reviews: List[Dict]) -> str:
         if not reviews:
             return "NO_REVIEWS"
         latest_by_reviewer = {}

@@ -32,3 +32,9 @@ Shows your tasks, PR status, and CI status. Pick a task to switch into its workt
 | q / esc | Quit                      |
 
 Worktrees are created at `~/.jora/worktrees/<repo>/<task-key>/`.
+
+## Dev
+
+```bash
+uv run pytest
+```

@@ -3,7 +3,9 @@
 import argparse
 import sys
 
-from jora.git import add_repo, remove_repo
+from jora.config import Config
+from jora.git import Git
+from jora.tmux import Tmux
 from jora import keychain
 from jora.linear import LinearClient
 from jora.github import GitHubClient
@@ -55,6 +57,9 @@ def _parse_args():
 
 
 def main():
+    cfg = Config()
+    git = Git(cfg)
+    tmux = Tmux(cfg.tmux_prefix)
     args = _parse_args()
 
     if args.command == "init":
@@ -89,7 +94,7 @@ def main():
 
     if args.command == "add":
         try:
-            name = add_repo(args.target)
+            name = git.add_repo(args.target)
             print(f"Added {name}")
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -98,7 +103,7 @@ def main():
 
     if args.command == "remove":
         try:
-            remove_repo(args.name)
+            git.remove_repo(args.name)
             print(f"Removed {args.name}")
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -113,7 +118,7 @@ def main():
     github = GitHubClient()
 
     with Menu(loading=True) as menu:
-        s = State(linear=linear, github=github, menu=menu)
+        s = State(git=git, tmux=tmux, linear=linear, github=github, menu=menu)
         s.load()
 
         while True:

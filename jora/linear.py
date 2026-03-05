@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from typing import Dict, List
 
 import requests
@@ -5,7 +6,22 @@ import requests
 LINEAR_API_URL = "https://api.linear.app/graphql"
 
 
-class LinearClient:
+class Tracker(ABC):
+    """Task/issue tracker backend (Linear, Jira, etc.)."""
+
+    @abstractmethod
+    def whoami(self) -> str:
+        """Return the authenticated user's display name."""
+
+    @abstractmethod
+    def fetch_tasks(self) -> List[Dict]:
+        """Return active tasks assigned to the current user.
+
+        Each task dict must contain: identifier, title, url.
+        """
+
+
+class LinearClient(Tracker):
     def __init__(self, api_key: str):
         self.api_key = api_key
 
@@ -39,20 +55,3 @@ class LinearClient:
         """
         result = self._graphql(query)
         return result.get("viewer", {}).get("assignedIssues", {}).get("nodes", [])
-
-    def fetch_issue_titles(self, identifiers: List[str]) -> Dict[str, str]:
-        """Fetch {identifier: title} for a list of issue identifiers."""
-        if not identifiers:
-            return {}
-        aliases = []
-        for i, ident in enumerate(identifiers):
-            aliases.append(f'i{i}: issue(id: "{ident}") {{ identifier title }}')
-        query = "{ " + " ".join(aliases) + " }"
-        try:
-            result = self._graphql(query)
-            return {
-                v["identifier"]: v["title"]
-                for v in result.values() if v
-            }
-        except Exception:
-            return {}
