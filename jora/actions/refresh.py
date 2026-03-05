@@ -5,6 +5,6 @@ class Refresh(Action):
     key = "r"
     label = "refresh"
 
-    def run(self, s, _data):
+    def run(self, s, _row):
         s.menu.loading = True
         s.start_loading()

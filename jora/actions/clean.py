@@ -7,7 +7,7 @@ class Clean(Action):
     key = "c"
     label = "clean"
 
-    def run(self, s, _data):
+    def run(self, s, _row):
         try:
             removed = s.menu.run_blocking("Cleaning worktrees", clean_worktrees, inline=True)
             for key in removed:

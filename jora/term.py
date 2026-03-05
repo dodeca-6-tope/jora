@@ -37,6 +37,7 @@ _MARK = {
 class Row:
     key: str
     title: str
+    wt_key: str = ""
     marks: Tuple[str, ...] = ()  # "ok", "fail", "neutral"
     worktree: bool = False
     session: bool = False
@@ -173,29 +174,13 @@ class Menu:
     def _total_rows(self) -> int:
         return sum(len(sec.rows) for sec in self.sections)
 
-    def _selected_section(self) -> Optional[Section]:
-        idx = self._cursor
-        for sec in self.sections:
-            if idx < len(sec.rows):
-                return sec
-            idx -= len(sec.rows)
-        return None
-
-    def _selected_row(self) -> Optional[Row]:
-        idx = self._cursor
-        for sec in self.sections:
-            if idx < len(sec.rows):
-                return sec.rows[idx]
-            idx -= len(sec.rows)
-        return None
-
-    def _row_at(self, idx: int) -> Optional[Row]:
+    def _at(self, idx: int) -> Tuple[Optional[Section], Optional[Row]]:
         i = idx
         for sec in self.sections:
             if i < len(sec.rows):
-                return sec.rows[i]
+                return sec, sec.rows[i]
             i -= len(sec.rows)
-        return None
+        return None, None
 
     def _index_of_key(self, key: str) -> Optional[int]:
         idx = 0
@@ -211,7 +196,7 @@ class Menu:
         total = self._total_rows
         if not total:
             return
-        prev = self._row_at(self._cursor)
+        _, prev = self._at(self._cursor)
         if prev:
             found = self._index_of_key(prev.key)
             if found is not None:
@@ -296,10 +281,10 @@ class Menu:
             for row in sec.rows:
                 lines.append(_format_row(row, flat_idx == self._cursor))
                 flat_idx += 1
-        sec = self._selected_section()
-        if sec:
+        cur_sec, _ = self._at(self._cursor)
+        if cur_sec:
             lines.append("")
-            lines.append(f"{_DIM}{sec.help}{_RESET}")
+            lines.append(f"{_DIM}{cur_sec.help}{_RESET}")
         if self.message:
             lines.append("")
             lines.append(self.message)

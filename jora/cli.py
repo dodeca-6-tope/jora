@@ -13,9 +13,8 @@ from jora.linear import LinearClient
 from jora.github import analyze_ci, analyze_reviews, fetch_prs, fetch_review_prs, match_prs_to_tasks, repo_slug, warm_gh_user
 from jora.term import Menu, Row, Section
 from jora.actions import (
-    TaskSelect, TaskOpen, TaskPR, TaskFix, TaskKill,
-    ReviewSelect, ReviewPR, ReviewKill, ReviewDelete,
-    Clean, Refresh, QuitAction, Quit,
+    Select, Open, PR, Fix, Kill,
+    Delete, Clean, Refresh, Quit,
 )
 
 # -- Shell init (jora init <shell>) ------------------------------------------
@@ -49,9 +48,9 @@ _REVIEW_MARK = {"APPROVED": "ok", "CHANGES_REQUESTED": "fail"}
 _CI_MARK = {"SUCCESS": "ok", "FAILURE": "fail"}
 _TICKET_RE = re.compile(r"[A-Z]+-\d+", re.IGNORECASE)
 
-_SHARED = [Refresh(), Clean(), QuitAction()]
-_TASK_ACTIONS = [TaskSelect(), TaskFix(), TaskKill(), TaskOpen(), TaskPR(), *_SHARED]
-_REVIEW_ACTIONS = [ReviewSelect(), ReviewKill(), ReviewDelete(), ReviewPR(), *_SHARED]
+_SHARED = [Refresh(), Clean(), Quit()]
+_TASK_ACTIONS = [Select(), Fix(), Kill(), Open(), PR(), *_SHARED]
+_REVIEW_ACTIONS = [Select(), Kill(), Delete(), PR(), *_SHARED]
 
 
 def _pr_ticket(pr):
@@ -135,6 +134,7 @@ def _make_row(key, title, pr, wt_key, data, worktrees, sessions):
     return Row(
         key=key,
         title=title,
+        wt_key=wt_key,
         marks=_pr_marks(pr),
         worktree=wt_key in worktrees,
         session=tmux.session_name(wt_key) in sessions,
@@ -256,25 +256,22 @@ def main():
         s = State(linear=linear, menu=menu)
         s.start_loading()
 
-        try:
-            while True:
-                menu.loading = not s._done.is_set()
+        while True:
+            menu.loading = not s._done.is_set()
 
-                try:
-                    key = menu.tick()
-                except KeyboardInterrupt:
+            try:
+                key = menu.tick()
+            except KeyboardInterrupt:
+                break
+
+            if key is None:
+                continue
+
+            sec, row = menu._at(menu._cursor)
+            if not sec or not row:
+                continue
+            for action in sec.actions:
+                if action.matches(key):
+                    if action.run(s, row) == "exit":
+                        return
                     break
-
-                if key is None:
-                    continue
-
-                sec = menu._selected_section()
-                row = menu._selected_row()
-                if not sec or not row:
-                    continue
-                for action in sec.actions:
-                    if action.matches(key):
-                        action.run(s, row.data)
-                        break
-        except Quit:
-            pass

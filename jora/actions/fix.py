@@ -4,17 +4,17 @@ from jora.actions.select import _ensure_task_worktree
 from jora.actions.action import Action
 
 
-class TaskFix(Action):
+class Fix(Action):
     key = "f"
     label = "fix"
 
-    def run(self, s, task):
-        task_id = task["identifier"]
-        name = tmux.session_name(task_id)
+    def run(self, s, row):
+        task_id = row.data["identifier"]
+        name = tmux.session_name(row.wt_key)
         if tmux.has_session(name):
             s.menu.message = "Session already running — use ⏎ to attach"
             return
-        wt = find_worktree(task_id)
+        wt = find_worktree(row.wt_key)
         if wt and not is_worktree_clean(wt):
             s.menu.message = "Worktree has changes — use ⏎ to attach"
             return

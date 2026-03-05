@@ -61,24 +61,17 @@ def _open_session(s, name, wt):
     s.rebuild()
 
 
-class TaskSelect(Action):
+class Select(Action):
     key = "⏎"
     label = "open"
     aliases = ("enter", "s")
 
-    def run(self, s, task):
-        task_id = task["identifier"]
-        name = tmux.session_name(task_id)
-        wt = find_worktree(task_id) if tmux.has_session(name) else _ensure_task_worktree(s, task_id)
-        _open_session(s, name, wt)
-
-
-class ReviewSelect(Action):
-    key = "⏎"
-    label = "open"
-    aliases = ("enter", "s")
-
-    def run(self, s, pr):
-        name = tmux.session_name(f"review-{pr['number']}")
-        wt = find_worktree(f"review-{pr['number']}") if tmux.has_session(name) else _ensure_review_worktree(s, pr)
+    def run(self, s, row):
+        name = tmux.session_name(row.wt_key)
+        if tmux.has_session(name):
+            wt = find_worktree(row.wt_key)
+        elif "identifier" in row.data:
+            wt = _ensure_task_worktree(s, row.data["identifier"])
+        else:
+            wt = _ensure_review_worktree(s, row.data)
         _open_session(s, name, wt)
