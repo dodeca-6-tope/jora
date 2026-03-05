@@ -11,6 +11,8 @@ import tty
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
+from jora.help import format_help
+
 _saved = None
 _active = False
 _fd = None
@@ -295,7 +297,7 @@ class Menu:
         if cur_sec and cur_row:
             enabled = [a for a in cur_row.actions if a.enabled(self.state, cur_row)]
             lines.append("")
-            lines.append("  ".join(f"{_DIM}[{_RESET}{a.key}{_DIM}] {a.label}{_RESET}" for a in enabled))
+            lines.append(format_help((a.key, a.label) for a in enabled))
         if self.message:
             lines.append("")
             lines.append(self.message)
@@ -324,7 +326,7 @@ def _pick_loop(title: str, items: List[str]) -> Optional[int]:
             cur = ">" if i == cursor else " "
             lines.append(f"{cur} {item}")
         lines.append("")
-        lines.append(f"{_DIM}\u23ce select  esc back{_RESET}")
+        lines.append(format_help([("\u23ce", "select"), ("esc", "back")]))
         _render(lines)
 
         try:
