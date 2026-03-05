@@ -3,7 +3,7 @@ from jora.actions.action import Action
 
 
 class Open(Action):
-    key = "o"
+    key = "l"
     label = "linear"
 
     def run(self, _s, row):

@@ -2,7 +2,7 @@ from jora.actions.action import Action
 
 
 class Kill(Action):
-    key = "x"
+    key = "k"
     label = "kill"
 
     def enabled(self, s, row):
