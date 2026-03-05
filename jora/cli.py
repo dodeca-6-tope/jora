@@ -99,11 +99,12 @@ class State:
 
         def load_reviews():
             slugs = [s for name in known_repos() if (rp := repo_path(name)) and (s := repo_slug(str(rp)))]
-            self.review_prs = fetch_review_prs(slugs)
+            prs = fetch_review_prs(slugs)
             task_ids = {t["identifier"] for t in self.tasks}
-            missing = {_pr_ticket(pr) for pr in self.review_prs if _pr_ticket(pr)} - task_ids
-            if missing:
-                self.review_titles = self.linear.fetch_issue_titles(list(missing))
+            missing = {_pr_ticket(pr) for pr in prs if _pr_ticket(pr)} - task_ids
+            titles = self.linear.fetch_issue_titles(list(missing)) if missing else {}
+            self.review_prs = prs
+            self.review_titles = titles
             self.rebuild()
 
         def go():
@@ -156,15 +157,23 @@ def _build(tasks, prs_by_task, review_prs, review_titles, worktrees, sessions):
         sections.append(Section(f"Tasks — {len(task_rows)}", task_rows, _TASK_ACTIONS))
 
     review_rows = []
-    for pr, ticket in [(pr, _pr_ticket(pr)) for pr in review_prs if _pr_ticket(pr)]:
+    hidden = 0
+    for pr in review_prs:
+        ticket = _pr_ticket(pr)
+        if not ticket:
+            hidden += 1
+            continue
         task = tasks_by_id.get(ticket)
-        title = task["title"] if task else review_titles.get(ticket, pr["title"])
+        title = task["title"] if task else review_titles.get(ticket, "")
         review_rows.append(_make_row(
             ticket[:9], title, pr,
             f"review-{pr['number']}", pr, worktrees, sessions,
         ))
     if review_rows:
-        sections.append(Section(f"Review — {len(review_rows)}", review_rows, _REVIEW_ACTIONS))
+        label = f"Review — {len(review_rows)}"
+        if hidden:
+            label += f" ({hidden} hidden)"
+        sections.append(Section(label, review_rows, _REVIEW_ACTIONS))
 
     return sections
 
