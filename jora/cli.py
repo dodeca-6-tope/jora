@@ -114,20 +114,18 @@ def main():
 
     with Menu(loading=True) as menu:
         s = State(linear=linear, github=github, menu=menu)
-        s.start_loading()
+        s.load()
 
         while True:
-            menu.loading = not s._done.is_set()
+            menu.loading = not s.done
 
             try:
-                key = menu.tick()
+                key, sec, row = menu.tick()
             except KeyboardInterrupt:
                 break
 
             if key is None:
                 continue
-
-            sec, row = menu._at(menu._cursor)
             if not sec or not row:
                 continue
             for action in sec.actions:

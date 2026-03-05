@@ -7,4 +7,4 @@ class Refresh(Action):
 
     def run(self, s, _row):
         s.menu.loading = True
-        s.start_loading()
+        s.load()

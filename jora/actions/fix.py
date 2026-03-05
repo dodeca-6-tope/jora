@@ -28,4 +28,4 @@ class Fix(Action):
             s.menu.message = f"Error: {e}"
             return
         tmux.send_keys(name, agent.command(task_id))
-        s.rebuild()
+        s.refresh()

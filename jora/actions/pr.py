@@ -8,9 +8,9 @@ class PR(Action):
 
     def run(self, s, row):
         if "identifier" in row.data:
-            task_prs = s.prs_by_task.get(row.data["identifier"], [])
-            if task_prs:
-                webbrowser.open(task_prs[0]["url"])
+            url = s.task_pr_url(row.data["identifier"])
+            if url:
+                webbrowser.open(url)
             else:
                 s.menu.message = "No PR for this task"
         else:

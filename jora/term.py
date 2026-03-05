@@ -204,8 +204,8 @@ class Menu:
                 return
         self._cursor = max(0, min(self._cursor, total - 1))
 
-    def tick(self) -> Optional[str]:
-        """Draw, read one key, return key or None. Handles navigation internally."""
+    def tick(self) -> Tuple[Optional[str], Optional[Section], Optional[Row]]:
+        """Draw, read one key, return (key, section, row) or (None, *, *) on no input."""
         total = self._total_rows
         self.stabilize_cursor()
 
@@ -216,56 +216,57 @@ class Menu:
 
         key = _readkey()
         if key is None:
-            return None
+            return None, None, None
 
         self.message = ""
 
         if key == "up" and total:
             self._cursor = max(0, self._cursor - 1)
-            return None
+            return None, None, None
         if key == "down" and total:
             self._cursor = min(total - 1, self._cursor + 1)
-            return None
+            return None, None, None
 
-        return key
+        sec, row = self._at(self._cursor)
+        return key, sec, row
 
-    @property
-    def selected(self) -> int:
-        return self._cursor
-
-    def run_blocking(self, text: str, fn: Callable, inline: bool = False):
-        """Run fn() in a background thread with a spinner. Returns result or raises.
-
-        If inline=False (default), replaces screen with spinner.
-        If inline=True, shows spinner in header while keeping the menu visible.
-        """
+    def _run_threaded(self, fn):
         result = [None]
         error = [None]
-
         def work():
             try:
                 result[0] = fn()
             except Exception as e:
                 error[0] = e
-
-        prev_loading = self.loading
-        prev_message = self.message
         t = threading.Thread(target=work, daemon=True)
         t.start()
+        return t, result, error
+
+    def spin(self, text: str, fn: Callable):
+        """Full screen spinner while fn runs."""
+        t, result, error = self._run_threaded(fn)
         frame = 0
         while t.is_alive():
             frame += 1
-            if inline:
-                self.loading = True
-                self._spin += 1
-                self.message = text
-                self._draw()
-            else:
-                _render([f"{text} {_SPINNER[frame // 4 % len(_SPINNER)]}"])
+            _render([f"{text} {_SPINNER[frame // 4 % len(_SPINNER)]}"])
+            t.join(timeout=1 / 60)
+        if error[0] is not None:
+            raise error[0]
+        return result[0]
+
+    def spin_inline(self, text: str, fn: Callable):
+        """Spinner in header while fn runs, menu stays visible."""
+        prev_loading = self.loading
+        prev_message = self.message
+        t, result, error = self._run_threaded(fn)
+        while t.is_alive():
+            self.loading = True
+            self._spin += 1
+            self.message = text
+            self._draw()
             t.join(timeout=1 / 60)
         self.loading = prev_loading
         self.message = prev_message
-
         if error[0] is not None:
             raise error[0]
         return result[0]

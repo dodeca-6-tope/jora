@@ -18,8 +18,8 @@ class Delete(Action):
             except Exception:
                 pass
         try:
-            s.menu.run_blocking(f"Removing {row.key}", lambda: remove_worktree(row.wt_key), inline=True)
+            s.menu.spin_inline(f"Removing {row.key}", lambda: remove_worktree(row.wt_key))
             s.menu.message = f"Removed worktree for {row.key}"
         except Exception as e:
             s.menu.message = f"Error: {e}"
-        s.rebuild()
+        s.refresh()

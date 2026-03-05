@@ -17,7 +17,7 @@ def _ensure_task_worktree(s, task_id):
         return None
     repo = repo_path(repos[idx])
     try:
-        return s.menu.run_blocking(
+        return s.menu.spin(
             f"Creating worktree for {task_id}",
             lambda: switch_to_task(task_id, repo),
         )
@@ -37,7 +37,7 @@ def _ensure_review_worktree(s, pr):
         s.menu.message = f"Repo {name} not registered"
         return None
     try:
-        return s.menu.run_blocking(
+        return s.menu.spin(
             f"Checking out #{pr['number']}",
             lambda: checkout_pr(pr["number"], rp),
         )
@@ -58,7 +58,7 @@ def _open_session(s, name, wt):
     suspend()
     tmux.attach_session(name)
     resume()
-    s.rebuild()
+    s.refresh()
 
 
 class Select(Action):

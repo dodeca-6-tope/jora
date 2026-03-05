@@ -15,4 +15,4 @@ class Kill(Action):
             tmux.kill_session(name)
         except Exception as e:
             s.menu.message = f"Error: {e}"
-        s.rebuild()
+        s.refresh()

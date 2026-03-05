@@ -24,14 +24,25 @@ class State:
     linear: LinearClient
     github: GitHubClient
     menu: Menu
-    tasks: List[Dict] = field(default_factory=list)
-    prs_by_task: Dict[str, List[Dict]] = field(default_factory=dict)
-    review_prs: List[Dict] = field(default_factory=list)
-    review_titles: Dict[str, str] = field(default_factory=dict)
+
+    def task_pr_url(self, task_id: str):
+        prs = self._prs_by_task.get(task_id, [])
+        return prs[0]["url"] if prs else None
+
+    def clean(self) -> List[str]:
+        from jora.git import clean_worktrees
+        return clean_worktrees(self.github)
+    _tasks: List[Dict] = field(default_factory=list)
+    _prs_by_task: Dict[str, List[Dict]] = field(default_factory=dict)
+    _review_prs: List[Dict] = field(default_factory=list)
     _done: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def rebuild(self):
+    @property
+    def done(self) -> bool:
+        return self._done.is_set()
+
+    def refresh(self):
         with self._lock:
             worktrees = list_worktrees()
             sessions = tmux.list_sessions()
@@ -64,11 +75,11 @@ class State:
 
     def _build(self, worktrees, sessions):
         sections = []
-        tasks_by_id = {t["identifier"]: t for t in self.tasks}
+        tasks_by_id = {t["identifier"]: t for t in self._tasks}
 
         task_rows = []
-        for task in self.tasks:
-            pr = next(iter(self.prs_by_task.get(task["identifier"], [])), None)
+        for task in self._tasks:
+            pr = next(iter(self._prs_by_task.get(task["identifier"], [])), None)
             task_id = task["identifier"]
             task_rows.append(self._make_row(
                 task_id[:9], task.get("title", "No title"), pr,
@@ -79,18 +90,20 @@ class State:
 
         review_rows = []
         hidden = 0
-        for pr in self.review_prs:
+        for pr in self._review_prs:
             ticket = self._pr_ticket(pr)
             if not ticket:
                 hidden += 1
                 continue
             task = tasks_by_id.get(ticket)
-            title = task["title"] if task else self.review_titles.get(ticket, "")
+            if not task:
+                hidden += 1
+                continue
             review_rows.append(self._make_row(
-                ticket[:9], title, pr,
+                ticket[:9], task["title"], pr,
                 f"review-{pr['number']}", pr, worktrees, sessions,
             ))
-        if review_rows:
+        if review_rows or hidden:
             label = f"Review — {len(review_rows)}"
             if hidden:
                 label += f" ({hidden} hidden)"
@@ -98,31 +111,26 @@ class State:
 
         return sections
 
-    def start_loading(self):
+    def load(self):
         self._done.clear()
 
         def load_tasks():
             try:
-                self.tasks = self.linear.fetch_tasks()
+                self._tasks = self.linear.fetch_tasks()
             except Exception as e:
                 self.menu.message = f"Failed to load tasks: {e}"
-            self.rebuild()
+            self.refresh()
 
         def load_prs():
-            self.prs_by_task = self.github.match_prs_to_tasks(
-                [t["identifier"] for t in self.tasks], self.github.fetch_prs(),
+            self._prs_by_task = self.github.match_prs_to_tasks(
+                [t["identifier"] for t in self._tasks], self.github.fetch_prs(),
             )
-            self.rebuild()
+            self.refresh()
 
         def load_reviews():
             slugs = [s for name in known_repos() if (rp := repo_path(name)) and (s := self.github.repo_slug(str(rp)))]
-            prs = self.github.fetch_review_prs(slugs)
-            task_ids = {t["identifier"] for t in self.tasks}
-            missing = {self._pr_ticket(pr) for pr in prs if self._pr_ticket(pr)} - task_ids
-            titles = self.linear.fetch_issue_titles(list(missing)) if missing else {}
-            self.review_prs = prs
-            self.review_titles = titles
-            self.rebuild()
+            self._review_prs = self.github.fetch_review_prs(slugs)
+            self.refresh()
 
         def go():
             threading.Thread(target=self.github.warm, daemon=True).start()
