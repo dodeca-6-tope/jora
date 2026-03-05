@@ -11,20 +11,18 @@ from typing import Dict, List
 from jora.git import (
     add_repo,
     clean_worktrees,
-    detect_active_task,
     find_worktree,
+    is_worktree_clean,
     known_repos,
     list_worktrees,
     remove_repo,
     repo_path,
     switch_to_task,
 )
-from jora import keychain
+from jora import agent, keychain, tmux
 from jora.linear import LinearClient
 from jora.github import analyze_ci, analyze_reviews, fetch_prs, match_prs_to_tasks
-from jora.term import Menu, Row, pick
-
-_CD_FILE = Path.home() / ".jora" / "cd"
+from jora.term import Menu, Row, pick, suspend, resume
 
 # -- Shell init (jora init <shell>) ------------------------------------------
 
@@ -64,12 +62,13 @@ class State:
     tasks: List[Dict] = field(default_factory=list)
     prs_by_task: Dict[str, List[Dict]] = field(default_factory=dict)
     worktrees: Dict[str, Path] = field(default_factory=dict)
-    active_key: str = ""
+    sessions: set = field(default_factory=set)
     prs_ready: threading.Event = field(default_factory=threading.Event)
 
     def rebuild(self):
         self.worktrees = list_worktrees()
-        self.menu.rows = _build_rows(self.tasks, self.prs_by_task, self.active_key, self.worktrees)
+        self.sessions = tmux.list_sessions()
+        self.menu.rows = _build_rows(self.tasks, self.prs_by_task, self.worktrees, self.sessions)
 
     def start_loading(self):
         self.prs_ready.clear()
@@ -97,7 +96,7 @@ class State:
         threading.Thread(target=go, daemon=True).start()
 
 
-def _build_rows(tasks, prs_by_task, active_key, worktrees):
+def _build_rows(tasks, prs_by_task, worktrees, sessions):
     rows = []
     for task in tasks:
         prs = prs_by_task.get(task["identifier"], [])
@@ -113,8 +112,8 @@ def _build_rows(tasks, prs_by_task, active_key, worktrees):
             key=task["identifier"][:9],
             title=task.get("title", "No title"),
             marks=marks,
-            active=task_lower == active_key,
             worktree=task_lower in worktrees,
+            session=tmux.session_name(task_lower) in sessions,
         ))
     return rows
 
@@ -122,37 +121,51 @@ def _build_rows(tasks, prs_by_task, active_key, worktrees):
 # -- Action handlers ---------------------------------------------------------
 # Each returns "continue", "break", or "return".
 
-def _cd_to(path):
-    _CD_FILE.write_text(str(path))
-    return "return"
-
-
-def _on_select(s):
-    task_id = s.tasks[s.menu.selected]["identifier"]
-
-    existing = find_worktree(task_id)
-    if existing:
-        return _cd_to(existing)
+def _ensure_worktree(s, task_id):
+    """Return worktree path, creating if needed. None on failure/cancel."""
+    wt = find_worktree(task_id)
+    if wt:
+        return wt
 
     repos = known_repos()
     if not repos:
         s.menu.message = "No repos. Run: jora add <path>"
-        return "continue"
+        return None
 
     idx = pick(f"Repo for {task_id}", repos)
     if idx is None:
-        return "continue"
+        return None
     repo = repo_path(repos[idx])
 
     try:
-        wt_path = s.menu.run_blocking(
-            f"Switching to {task_id}",
+        return s.menu.run_blocking(
+            f"Creating worktree for {task_id}",
             lambda: switch_to_task(task_id, repo),
         )
-        return _cd_to(wt_path)
     except Exception as e:
         s.menu.message = f"Error: {e}"
-        return "continue"
+        return None
+
+
+def _on_select(s):
+    task_id = s.tasks[s.menu.selected]["identifier"]
+    name = tmux.session_name(task_id)
+
+    if not tmux.has_session(name):
+        wt = _ensure_worktree(s, task_id)
+        if not wt:
+            return "continue"
+        try:
+            tmux.create_session(name, str(wt))
+        except Exception as e:
+            s.menu.message = f"Error creating session: {e}"
+            return "continue"
+
+    suspend()
+    tmux.attach_session(name)
+    resume()
+    s.rebuild()
+    return "continue"
 
 
 def _on_open(s):
@@ -171,14 +184,14 @@ def _on_pr(s):
 
 def _on_clean(s):
     try:
-        active_wt = find_worktree(s.active_key) if s.active_key else None
-        active_repo = active_wt.parent.name if active_wt else None
+        before = set(s.worktrees.keys())
         n = s.menu.run_blocking("Cleaning worktrees", clean_worktrees)
+        after = set(list_worktrees().keys())
+        for removed_key in before - after:
+            name = tmux.session_name(removed_key)
+            if tmux.has_session(name):
+                tmux.kill_session(name)
         s.menu.message = f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
-        if n and active_wt and not active_wt.exists():
-            s.active_key = ""
-            rp = repo_path(active_repo) or Path.home()
-            _CD_FILE.write_text(str(rp))
         if n:
             s.rebuild()
     except Exception as e:
@@ -192,10 +205,57 @@ def _on_refresh(s):
     return "continue"
 
 
+def _on_fix(s):
+    task = s.tasks[s.menu.selected]
+    task_id = task["identifier"]
+    name = tmux.session_name(task_id)
+
+    if tmux.has_session(name):
+        s.menu.message = "Session already running — use ⏎ to attach"
+        return "continue"
+
+    wt = find_worktree(task_id)
+    if wt and not is_worktree_clean(wt):
+        s.menu.message = "Worktree has changes — use ⏎ to attach"
+        return "continue"
+
+    if not wt:
+        wt = _ensure_worktree(s, task_id)
+        if not wt:
+            return "continue"
+
+    try:
+        tmux.create_session(name, str(wt))
+    except Exception as e:
+        s.menu.message = f"Error creating session: {e}"
+        return "continue"
+
+    tmux.send_keys(name, agent.command(task_id))
+
+    s.rebuild()
+    return "continue"
+
+
+def _on_kill(s):
+    task_id = s.tasks[s.menu.selected]["identifier"]
+    name = tmux.session_name(task_id)
+    if not tmux.has_session(name):
+        s.menu.message = "No session for this task"
+        return "continue"
+    try:
+        tmux.kill_session(name)
+    except Exception as e:
+        s.menu.message = f"Error killing session: {e}"
+    s.rebuild()
+    return "continue"
+
+
 _ACTIONS = {
     "select": _on_select,
     "open": _on_open,
     "pr": _on_pr,
+    "fix": _on_fix,
+    "kill": _on_kill,
     "clean": _on_clean,
     "refresh": _on_refresh,
 }
@@ -274,8 +334,8 @@ def main():
     linear = LinearClient(api_key)
 
     with Menu(loading=True) as menu:
-        s = State(linear=linear, menu=menu, active_key=detect_active_task(),
-                  worktrees=list_worktrees())
+        s = State(linear=linear, menu=menu,
+                  worktrees=list_worktrees(), sessions=tmux.list_sessions())
         s.start_loading()
 
         while True:

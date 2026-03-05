@@ -38,8 +38,8 @@ class Row:
     key: str
     title: str
     marks: Tuple[str, ...] = ()  # "ok", "fail", "neutral"
-    active: bool = False
     worktree: bool = False
+    session: bool = False
 
 
 # -- Setup / teardown --------------------------------------------------------
@@ -68,6 +68,24 @@ def _cleanup():
     sys.stdout.flush()
     if _saved:
         termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
+
+
+def suspend():
+    """Leave alt screen and restore terminal for a child process."""
+    sys.stdout.write("\033[?25h\033[?1049l")
+    sys.stdout.flush()
+    if _saved:
+        termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
+
+
+def resume():
+    """Re-enter alt screen and raw mode after a child process."""
+    tty.setraw(_fd)
+    attrs = termios.tcgetattr(_fd)
+    attrs[1] |= termios.OPOST
+    termios.tcsetattr(_fd, termios.TCSADRAIN, attrs)
+    sys.stdout.write("\033[?1049h\033[?25l")
+    sys.stdout.flush()
 
 
 # -- Input -------------------------------------------------------------------
@@ -100,8 +118,8 @@ def _format_marks(marks: Tuple[str, ...]) -> str:
 
 
 def _format_row(row: Row, selected: bool) -> str:
-    star = "*" if row.active else ("+" if row.worktree else "")
-    key = f"{row.key}{star}"
+    wt = "◆" if row.session else ("◇" if row.worktree else "")
+    key = f"{row.key}{wt}"
     ident = f"{_DIM}{key:<10}{_RESET}"
     title = row.title
     avail = os.get_terminal_size().columns - _PREFIX
@@ -125,6 +143,7 @@ def _render(lines: list[str]):
 _KEY_TO_ACTION = {
     "enter": "select", "s": "select",
     "o": "open", "p": "pr", "r": "refresh",
+    "f": "fix", "x": "kill",
     "c": "clean", "q": "quit", "esc": "quit",
 }
 
@@ -203,7 +222,7 @@ class Menu:
             lines.append(_format_row(row, i == self._cursor))
         if self.rows:
             lines.append("")
-            lines.append(f"{_DIM}⏎ switch  o open  p PR  r refresh  c clean  q quit{_RESET}")
+            lines.append(f"{_DIM}⏎ open  f fix  x kill  o linear  p PR  r refresh  c clean  q quit{_RESET}")
         if self.message:
             lines.append("")
             lines.append(self.message)

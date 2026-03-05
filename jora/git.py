@@ -114,7 +114,7 @@ def _default_branch(cwd: str) -> str:
     return "main"
 
 
-def _is_worktree_clean(wt: Path) -> bool:
+def is_worktree_clean(wt: Path) -> bool:
     """A worktree is clean only if: no dirty/untracked files and no unique commits."""
     cwd = str(wt)
 
@@ -174,7 +174,7 @@ def clean_worktrees() -> int:
     # Check cleanliness in parallel
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=min(len(all_wts), 8)) as pool:
-        results = list(pool.map(lambda pair: _is_worktree_clean(pair[1]), all_wts))
+        results = list(pool.map(lambda pair: is_worktree_clean(pair[1]), all_wts))
 
     # Remove clean worktrees (sequential — touches shared repo state)
     removed = 0
