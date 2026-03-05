@@ -117,12 +117,11 @@ def main():
     linear = LinearClient(api_key)
     github = GitHubClient()
 
-    with Menu(loading=True) as menu:
+    with Menu() as menu:
         s = State(git=git, tmux=tmux, linear=linear, github=github, menu=menu)
         s.load()
 
         while True:
-            menu.loading = not s.done
 
             try:
                 key, sec, row = menu.tick()

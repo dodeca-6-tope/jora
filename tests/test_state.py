@@ -537,8 +537,7 @@ def test_clean_removes_stale_worktrees(tmp_path):
     s.open_task("proj-1", "myrepo")
     s.kill_session("proj-1")
 
-    n = s.clean()
-    assert n >= 1
+    s.clean()
     assert not s.has_worktree("proj-1")
     assert "Removed" in s.menu.message
 
@@ -547,8 +546,7 @@ def test_clean_nothing_to_clean(tmp_path):
     # User presses 'c' but there are no stale worktrees
     s = _loaded_state(tmp_path)
 
-    n = s.clean()
-    assert n == 0
+    s.clean()
     assert "Nothing to clean" in s.menu.message
 
 

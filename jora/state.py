@@ -43,6 +43,7 @@ class State:
 
     def load(self):
         self._done.clear()
+        self.menu.loading = True
 
         def load_tasks():
             try:
@@ -73,6 +74,7 @@ class State:
             t1.join()
             t2.join()
             self._done.set()
+            self.menu.loading = False
 
         threading.Thread(target=go, daemon=True).start()
 
@@ -176,8 +178,9 @@ class State:
         self.tmux.attach_session(self.tmux.session_name(wt_key))
         self.refresh()
 
-    def clean(self) -> int:
-        """Remove stale worktrees and their sessions. Returns count removed."""
+    def clean(self):
+        """Remove stale worktrees and their sessions."""
+        self.menu.loading = True
         removed = self.git.clean_worktrees(self.github)
         for key in removed:
             name = self.tmux.session_name(key)
@@ -185,9 +188,9 @@ class State:
                 self.tmux.kill_session(name)
         n = len(removed)
         self.menu.message = f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
+        self.menu.loading = False
         if n:
             self.refresh()
-        return n
 
     # -- View building -------------------------------------------------------
 

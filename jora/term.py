@@ -6,6 +6,7 @@ import select
 import sys
 import termios
 import threading
+import time
 import tty
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
@@ -23,6 +24,7 @@ _BOLD = "\033[1m"
 _RESET = "\033[0m"
 _SPINNER = r"-\|/"
 _PREFIX = 16  # visible chars before title: "> ✓ ✗ LTXD-408* "
+_MESSAGE_TTL = 2  # seconds before notification auto-clears
 
 _MARK = {
     "ok": f"{_GREEN}✓{_RESET}",
@@ -155,10 +157,22 @@ class Section:
 class Menu:
     sections: List[Section] = field(default_factory=list)
     loading: bool = False
-    message: str = ""
     state: object = None
+    _message: str = ""
+    _message_time: float = 0
     _cursor: int = 0
     _spin: int = 0
+
+    @property
+    def message(self) -> str:
+        if self._message and self._message_time and time.monotonic() - self._message_time >= _MESSAGE_TTL:
+            self._message = ""
+        return self._message
+
+    @message.setter
+    def message(self, value: str):
+        self._message = value
+        self._message_time = time.monotonic() if value else 0
 
     def __enter__(self):
         _init()
@@ -214,8 +228,6 @@ class Menu:
         key = _readkey()
         if key is None:
             return None, None, None
-
-        self.message = ""
 
         if key == "up" and total:
             self._cursor = max(0, self._cursor - 1)
@@ -283,7 +295,7 @@ class Menu:
         if cur_sec and cur_row:
             enabled = [a for a in cur_row.actions if a.enabled(self.state, cur_row)]
             lines.append("")
-            lines.append(f"{_DIM}{'  '.join(f'{a.key} {a.label}' for a in enabled)}{_RESET}")
+            lines.append("  ".join(f"{_DIM}[{_RESET}{a.key}{_DIM}] {a.label}{_RESET}" for a in enabled))
         if self.message:
             lines.append("")
             lines.append(self.message)

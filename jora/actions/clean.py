@@ -1,3 +1,5 @@
+import threading
+
 from jora.actions.action import Action
 
 
@@ -6,4 +8,4 @@ class Clean(Action):
     label = "clean"
 
     def run(self, s, _row):
-        s.menu.spin_inline("Cleaning worktrees", s.clean)
+        threading.Thread(target=s.clean, daemon=True).start()
