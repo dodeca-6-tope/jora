@@ -278,7 +278,7 @@ class State:
             wt = self.git.switch_to_task(task_id, rp)
         name = self.tmux.session_name(task_id)
         self.tmux.create_session(name, str(wt))
-        self.tmux.send_keys(name, agent.command(task_id))
+        self.tmux.send_keys(name, agent.command(f"Fix task {task_id}"))
         self.on_change()
 
     def kill_session(self, wt_key: str):
