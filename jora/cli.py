@@ -106,7 +106,7 @@ def main():
             on_attach=lambda name: (suspend(), tmux.attach_session(name), resume()),
             on_open_url=webbrowser.open,
             on_defer=pending.append,
-            on_change=lambda: app.rebuild(),
+            on_change=app.rebuild,
         )
         app.state = s
         s.load()
