@@ -157,8 +157,10 @@ def _readkey() -> str | None:
                 return "up"
             if seq[:2] == b"[B":
                 return "down"
-            if seq[:2] in (b"[C", b"[D"):
-                return None
+            if seq[:2] == b"[C":
+                return "right"
+            if seq[:2] == b"[D":
+                return "left"
             if seq[:2] == b"[I":
                 return "focus"
             if seq[:2] == b"[O":
@@ -273,9 +275,12 @@ class App:
         _rebuild_tab(self._tabs[0], self.state.task_items())
         _rebuild_tab(self._tabs[1], self.state.review_items())
 
-    def next_tab(self):
-        """Switch to the next tab."""
-        self._tab_idx = (self._tab_idx + 1) % len(self._tabs)
+    def switch_tab(self, delta: int, wrap: bool = False):
+        """Move tab index by *delta*, optionally wrapping around."""
+        if wrap:
+            self._tab_idx = (self._tab_idx + delta) % len(self._tabs)
+        else:
+            self._tab_idx = max(0, min(self._tab_idx + delta, len(self._tabs) - 1))
 
     def alert(self, text: str):
         """Add a notification message."""

@@ -306,7 +306,7 @@ def test_review_shown_with_worktree(tmp_path):
     _fake_worktree(tmp_path, "repo", "review-99")
 
     _, _, app = _loaded_state(tmp_path, review_prs=[review_pr])
-    app.next_tab()
+    app.switch_tab(1)
 
     assert len(app.sections) == 1
     row = app.sections[0].rows[0]
@@ -319,7 +319,7 @@ def test_review_shows_pr_title(tmp_path):
     _, _, app = _loaded_state(
         tmp_path, review_prs=[_make_pr(number=77, title="fix typo", branch="random")]
     )
-    app.next_tab()
+    app.switch_tab(1)
 
     row = app.sections[0].rows[0]
     assert row.title == "fix typo"
@@ -431,7 +431,7 @@ def test_review_row_actions(tmp_path):
     review_pr = _make_pr(number=99, title="[PROJ-1] change", repo_slug="org/repo")
     _fake_worktree(tmp_path, "repo", "review-99")
     s, _, app = _loaded_state(tmp_path, review_prs=[review_pr])
-    app.next_tab()
+    app.switch_tab(1)
 
     row = app.sections[0].rows[0]
     help_text = _row_help(s, row)

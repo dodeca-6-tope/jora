@@ -137,7 +137,13 @@ def main():
                 s.maybe_reload(force=True)
                 continue
             if key == "tab":
-                app.next_tab()
+                app.switch_tab(1, wrap=True)
+                continue
+            if key == "right":
+                app.switch_tab(1)
+                continue
+            if key == "left":
+                app.switch_tab(-1)
                 continue
             if dispatch(key, row, s) == "exit":
                 return
