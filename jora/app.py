@@ -26,7 +26,6 @@ from jora.notifications import Notifications
 class Row:
     key: str
     title: str
-    wt_key: str = ""
     marks: Tuple[str, ...] = ()
     worktree: bool = False
     session: bool = False
@@ -202,9 +201,8 @@ def _item_to_row(item, actions):
     return Row(
         key=key,
         title=item.title,
-        wt_key=item.id.lower(),
         marks=marks,
-        worktree=item.worktree,
+        worktree=item.wt is not None,
         session=item.session,
         data=item,
         actions=actions,

@@ -42,5 +42,3 @@ class Tmux:
             return set()
         return {s for s in out.splitlines() if s.startswith(self.prefix)}
 
-    def session_name(self, task_key: str) -> str:
-        return f"{self.prefix}{task_key.lower().replace(':', '_')}"

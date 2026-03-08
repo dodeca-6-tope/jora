@@ -9,16 +9,26 @@ class Select(Action):
     aliases = ("enter", "s")
 
     def run(self, s, row):
-        if s.has_session(row.wt_key):
-            s.attach(row.wt_key)
+        item = row.data
+        if item.wt and s.has_session(item.wt):
+            s.attach(item.wt)
             return
 
-        if isinstance(row.data, TaskItem):
-            task_id = row.data.id
-            repo = _pick_repo(s, task_id) if not s.has_worktree(row.wt_key) else None
-            if not s.has_worktree(row.wt_key) and not repo:
+        if isinstance(item, TaskItem):
+            task_id = item.id
+            repo = _pick_repo(s, task_id) if not item.wt else None
+            if not item.wt and not repo:
                 return
-            s.run(lambda: s.open_task(task_id, repo), "Opening", then=lambda: s.attach(row.wt_key))
+
+            def open_and_attach():
+                wt = s.open_task(task_id, repo)
+                s.on_defer(lambda: s.attach(wt))
+
+            s.run(open_and_attach, "Opening")
         else:
-            item = row.data
-            s.run(lambda: s.open_review(item.number, item.repo_slug, item.branch), "Opening", then=lambda: s.attach(row.wt_key))
+
+            def open_and_attach():
+                wt = s.open_review(item.number, item.repo_slug, item.branch)
+                s.on_defer(lambda: s.attach(wt))
+
+            s.run(open_and_attach, "Opening")

@@ -1,9 +1,16 @@
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from jora.config import Config
+
+
+@dataclass(frozen=True)
+class Worktree:
+    repo: str
+    key: str
 
 
 class Git:
@@ -95,7 +102,7 @@ class Git:
         except subprocess.SubprocessError:
             return ""
 
-    def list_worktrees(self) -> Dict[str, Path]:
+    def list_worktrees(self) -> Dict[Worktree, Path]:
         if not self._worktrees_dir.exists():
             return {}
         result = {}
@@ -104,18 +111,25 @@ class Git:
                 continue
             for wt in repo_dir.iterdir():
                 if wt.is_dir() and (wt / ".git").exists():
-                    result[wt.name] = wt
+                    result[Worktree(repo_dir.name, wt.name)] = wt
         return result
 
-    def find_worktree(self, task_key: str) -> Optional[Path]:
+    def find_worktree(self, wt: Worktree) -> Optional[Path]:
+        path = self._worktrees_dir / wt.repo / wt.key
+        if path.is_dir() and (path / ".git").exists():
+            return path
+        return None
+
+    def find_worktree_by_key(self, key: str) -> Optional[Worktree]:
+        """Scan all repos for a worktree with the given key."""
         if not self._worktrees_dir.exists():
             return None
         for repo_dir in self._worktrees_dir.iterdir():
             if not repo_dir.is_dir():
                 continue
-            wt = repo_dir / task_key.lower()
+            wt = repo_dir / key.lower()
             if wt.is_dir() and (wt / ".git").exists():
-                return wt
+                return Worktree(repo_dir.name, wt.name)
         return None
 
     def is_worktree_clean(self, wt: Path) -> bool:
@@ -151,7 +165,7 @@ class Git:
         )
         return merged.returncode == 0
 
-    def clean_worktrees(self, github) -> List[str]:
+    def clean_worktrees(self, github) -> List[Worktree]:
         from concurrent.futures import ThreadPoolExecutor
 
         if not self._worktrees_dir.exists():
@@ -204,7 +218,7 @@ class Git:
         for (repo_name, wt), clean in zip(all_wts, results):
             if not clean:
                 continue
-            removed.append(wt.name)
+            removed.append(Worktree(repo_name, wt.name))
             self._remove_wt(repo_name, wt)
 
         for repo_dir in self._worktrees_dir.iterdir():
@@ -237,24 +251,23 @@ class Git:
         if branch and branch != "HEAD":
             subprocess.run(["git", "branch", "-D", branch], cwd=str(git_dir), capture_output=True)
 
-    def remove_worktree(self, key: str):
-        wt = self.find_worktree(key)
-        if not wt:
-            raise ValueError(f"No worktree for {key}")
-        self._remove_wt(wt.parent.name, wt)
-        parent = wt.parent
+    def remove_worktree(self, wt: Worktree):
+        path = self.find_worktree(wt)
+        if not path:
+            raise ValueError(f"No worktree for {wt.repo}/{wt.key}")
+        self._remove_wt(wt.repo, path)
+        parent = path.parent
         if parent.exists() and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
 
-    def checkout_pr(self, pr_number: int, branch: str, rp: Path) -> Path:
-        key = f"review-{pr_number}"
-        existing = self.find_worktree(key)
+    def checkout_pr(self, pr_number: int, branch: str, rp: Path) -> Worktree:
+        wt = Worktree(rp.name, f"review-{pr_number}")
+        existing = self.find_worktree(wt)
         if existing:
-            return existing
+            return wt
 
-        repo_name = rp.name
-        wt = self._worktrees_dir / repo_name / key
-        wt.parent.mkdir(parents=True, exist_ok=True)
+        path = self._worktrees_dir / wt.repo / wt.key
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         subprocess.run(
             ["git", "fetch", "origin", f"pull/{pr_number}/head:{branch}"],
@@ -263,7 +276,7 @@ class Git:
             cwd=str(rp),
         )
         r = subprocess.run(
-            ["git", "worktree", "add", str(wt), branch],
+            ["git", "worktree", "add", str(path), branch],
             capture_output=True,
             text=True,
             cwd=str(rp),
@@ -271,20 +284,20 @@ class Git:
         if r.returncode != 0:
             import shutil
 
-            shutil.rmtree(wt, ignore_errors=True)
+            shutil.rmtree(path, ignore_errors=True)
             subprocess.run(["git", "worktree", "prune"], capture_output=True, cwd=str(rp))
             raise RuntimeError(r.stderr.strip() or "Failed to checkout PR branch")
         return wt
 
-    def switch_to_task(self, task_key: str, rp: Path) -> Path:
-        existing = self.find_worktree(task_key)
+    def switch_to_task(self, task_key: str, rp: Path) -> Worktree:
+        wt = Worktree(rp.name, task_key.lower())
+        existing = self.find_worktree(wt)
         if existing:
-            return existing
+            return wt
 
-        repo_name = rp.name
-        wt = self._worktrees_dir / repo_name / task_key.lower()
+        path = self._worktrees_dir / wt.repo / wt.key
         branch = f"feature/{task_key.lower()}"
-        wt.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         cwd = str(rp)
 
         branch_exists = (
@@ -301,10 +314,10 @@ class Git:
         subprocess.run(["git", "fetch", "origin", base], capture_output=True, check=True, cwd=cwd)
 
         if branch_exists:
-            subprocess.run(["git", "worktree", "add", str(wt), branch], capture_output=True, check=True, cwd=cwd)
+            subprocess.run(["git", "worktree", "add", str(path), branch], capture_output=True, check=True, cwd=cwd)
         else:
             subprocess.run(
-                ["git", "worktree", "add", str(wt), "-b", branch, f"origin/{base}"],
+                ["git", "worktree", "add", str(path), "-b", branch, f"origin/{base}"],
                 capture_output=True,
                 check=True,
                 cwd=cwd,

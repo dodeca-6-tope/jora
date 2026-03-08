@@ -18,7 +18,7 @@ class Fix(Action):
 
     def run(self, s, row):
         task_id = row.data.id
-        if not s.worktree_path(task_id):
+        if not row.data.wt:
             repo = _pick_repo(s, task_id)
             if not repo:
                 return

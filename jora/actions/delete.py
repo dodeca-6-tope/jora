@@ -6,7 +6,7 @@ class Delete(Action):
     label = "delete"
 
     def enabled(self, s, row):
-        return s.has_worktree(row.wt_key)
+        return row.data.wt is not None
 
     def run(self, s, row):
-        s.delete_worktree(row.wt_key)
+        s.delete_worktree(row.data.wt)

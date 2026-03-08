@@ -6,7 +6,7 @@ class Kill(Action):
     label = "kill"
 
     def enabled(self, s, row):
-        return s.has_session(row.wt_key)
+        return row.data.wt is not None and s.has_session(row.data.wt)
 
     def run(self, s, row):
-        s.kill_session(row.wt_key)
+        s.kill_session(row.data.wt)
