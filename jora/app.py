@@ -17,7 +17,6 @@ from jora.actions.pr import PR
 from jora.actions.quit import Quit
 from jora.actions.refresh import Refresh
 from jora.actions.select import Select
-from jora.help import render_help
 from jora.notifications import Notifications
 
 
@@ -376,7 +375,8 @@ class App:
             parts = []
             if len(self._tabs) > 1:
                 parts.append("[⇥] switch")
-            help_text = render_help(actions_for(cur_row), self.state, cur_row)
+            pairs = [(a.key, a.label) for a in actions_for(cur_row) if a.enabled(self.state, cur_row)]
+            help_text = "  ".join(f"[{k}] {l}" for k, l in pairs)
             if help_text:
                 parts.append(help_text)
             if parts:
