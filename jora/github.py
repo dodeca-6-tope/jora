@@ -123,7 +123,9 @@ def _latest_review_by(pr: PullRequest, login: str) -> str:
 # -- Normalization ----------------------------------------------------------
 
 
-def _match_prs_to_tasks(task_keys: list[str], all_prs: list[PullRequest]) -> dict[str, list[PullRequest]]:
+def _match_prs_to_tasks(
+    task_keys: list[str], all_prs: list[PullRequest]
+) -> dict[str, list[PullRequest]]:
     result = {}
     for key in task_keys:
         pattern = re.compile(re.escape(key) + r"(?!\w)", re.IGNORECASE)
@@ -198,7 +200,9 @@ class GitHubClient(GitHub):
         self._token = token
         self._login = None
         self._session = requests.Session()
-        self._session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
+        self._session.headers.update(
+            {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        )
 
     def whoami(self) -> str:
         if self._login is not None:
@@ -234,8 +238,12 @@ class GitHubClient(GitHub):
         repo_filter = " ".join(f"repo:{s}" for s in repo_slugs)
         try:
             with ThreadPoolExecutor(max_workers=2) as pool:
-                fut_requested = pool.submit(self._fetch_search, "review-requested:@me", repo_filter)
-                fut_reviewed = pool.submit(self._fetch_search, "reviewed-by:@me", repo_filter)
+                fut_requested = pool.submit(
+                    self._fetch_search, "review-requested:@me", repo_filter
+                )
+                fut_reviewed = pool.submit(
+                    self._fetch_search, "reviewed-by:@me", repo_filter
+                )
 
             requested = set()
             prs_by_number = {}
@@ -270,7 +278,12 @@ class GitHubClient(GitHub):
         owner, repo = slug.split("/", 1)
         try:
             r = self._graphql(query, owner=owner, repo=repo, branch=branch)
-            nodes = r.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+            nodes = (
+                r.get("data", {})
+                .get("repository", {})
+                .get("pullRequests", {})
+                .get("nodes", [])
+            )
             return len(nodes) > 0
         except (requests.RequestException, KeyError):
             return False

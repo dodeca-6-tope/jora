@@ -43,7 +43,9 @@ compdef _jora jora
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(prog="jora", description="Linear task switcher with git worktrees")
+    parser = argparse.ArgumentParser(
+        prog="jora", description="Linear task switcher with git worktrees"
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="print shell init script (zsh)")
@@ -70,8 +72,20 @@ def main():
         return
 
     if args.command == "auth":
-        keychain.auth("Linear", "linear", "https://linear.app/settings/api", lambda k: LinearClient(k).whoami(), args.reset)
-        keychain.auth("GitHub", "github", "https://github.com/settings/tokens", lambda k: GitHubClient(k).whoami(), args.reset)
+        keychain.auth(
+            "Linear",
+            "linear",
+            "https://linear.app/settings/api",
+            lambda k: LinearClient(k).whoami(),
+            args.reset,
+        )
+        keychain.auth(
+            "GitHub",
+            "github",
+            "https://github.com/settings/tokens",
+            lambda k: GitHubClient(k).whoami(),
+            args.reset,
+        )
         return
 
     if args.command == "add":

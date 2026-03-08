@@ -41,4 +41,3 @@ class Tmux:
         if not out:
             return set()
         return {s for s in out.splitlines() if s.startswith(self.prefix)}
-

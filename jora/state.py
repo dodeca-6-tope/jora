@@ -110,7 +110,8 @@ class State:
             slugs = [
                 s
                 for name in self.git.known_repos()
-                if (rp := self.git.repo_path(name)) and (s := self.git.repo_slug(str(rp)))
+                if (rp := self.git.repo_path(name))
+                and (s := self.git.repo_slug(str(rp)))
             ]
             prs = self.github.fetch_review_prs(slugs)
             with self._lock:
@@ -140,7 +141,10 @@ class State:
         """Re-fetch if enough time has passed or force is set. Skips if already loading."""
         if not self._done.is_set():
             return
-        if force or (self._last_load and time.time() - self._last_load >= self._AUTO_RELOAD_INTERVAL):
+        if force or (
+            self._last_load
+            and time.time() - self._last_load >= self._AUTO_RELOAD_INTERVAL
+        ):
             threading.Thread(target=self._fetch, daemon=True).start()
 
     def _session_name(self, wt: Worktree) -> str:
@@ -317,6 +321,8 @@ class State:
             if self.tmux.has_session(name):
                 self.tmux.kill_session(name)
         n = len(removed)
-        self.on_alert(f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean")
+        self.on_alert(
+            f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
+        )
         if n:
             self.on_change()

@@ -185,7 +185,9 @@ class Git:
             rp = self.repo_path(repo_name)
             if rp:
                 base = _default_branch(str(rp))
-                subprocess.run(["git", "fetch", "origin", base], cwd=str(rp), capture_output=True)
+                subprocess.run(
+                    ["git", "fetch", "origin", base], cwd=str(rp), capture_output=True
+                )
 
         repo_names = {wt.repo for wt in all_wts}
         with ThreadPoolExecutor(max_workers=min(len(repo_names), 8)) as pool:
@@ -247,9 +249,13 @@ class Git:
         )
         if r.returncode != 0:
             shutil.rmtree(path, ignore_errors=True)
-            subprocess.run(["git", "worktree", "prune"], cwd=str(git_dir), capture_output=True)
+            subprocess.run(
+                ["git", "worktree", "prune"], cwd=str(git_dir), capture_output=True
+            )
         if branch and branch != "HEAD":
-            subprocess.run(["git", "branch", "-D", branch], cwd=str(git_dir), capture_output=True)
+            subprocess.run(
+                ["git", "branch", "-D", branch], cwd=str(git_dir), capture_output=True
+            )
 
     def remove_worktree(self, wt: Worktree):
         if not self.find_worktree(wt):
@@ -284,7 +290,9 @@ class Git:
             import shutil
 
             shutil.rmtree(path, ignore_errors=True)
-            subprocess.run(["git", "worktree", "prune"], capture_output=True, cwd=str(rp))
+            subprocess.run(
+                ["git", "worktree", "prune"], capture_output=True, cwd=str(rp)
+            )
             raise RuntimeError(r.stderr.strip() or "Failed to checkout PR branch")
         return wt
 
@@ -310,10 +318,17 @@ class Git:
         )
 
         base = _default_branch(cwd)
-        subprocess.run(["git", "fetch", "origin", base], capture_output=True, check=True, cwd=cwd)
+        subprocess.run(
+            ["git", "fetch", "origin", base], capture_output=True, check=True, cwd=cwd
+        )
 
         if branch_exists:
-            subprocess.run(["git", "worktree", "add", str(path), branch], capture_output=True, check=True, cwd=cwd)
+            subprocess.run(
+                ["git", "worktree", "add", str(path), branch],
+                capture_output=True,
+                check=True,
+                cwd=cwd,
+            )
         else:
             subprocess.run(
                 ["git", "worktree", "add", str(path), "-b", branch, f"origin/{base}"],

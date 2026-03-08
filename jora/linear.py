@@ -10,6 +10,7 @@ class Task:
     title: str
     url: str
 
+
 LINEAR_API_URL = "https://api.linear.app/graphql"
 
 
@@ -31,7 +32,9 @@ class LinearClient(Tracker):
 
     def _graphql(self, query: str) -> dict:
         headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
-        resp = requests.post(LINEAR_API_URL, headers=headers, json={"query": query}, timeout=30)
+        resp = requests.post(
+            LINEAR_API_URL, headers=headers, json={"query": query}, timeout=30
+        )
         resp.raise_for_status()
         data = resp.json()
         if "errors" in data:
@@ -59,4 +62,7 @@ class LinearClient(Tracker):
         """
         result = self._graphql(query)
         nodes = result.get("viewer", {}).get("assignedIssues", {}).get("nodes", [])
-        return [Task(identifier=n["identifier"], title=n["title"], url=n["url"]) for n in nodes]
+        return [
+            Task(identifier=n["identifier"], title=n["title"], url=n["url"])
+            for n in nodes
+        ]

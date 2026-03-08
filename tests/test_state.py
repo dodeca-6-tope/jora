@@ -28,7 +28,9 @@ def _wait_done(s, timeout=5):
         time.sleep(0.01)
 
 
-def _make_pr(number=1, title="", url="", branch="", reviews=None, ci=None, repo_slug="org/repo"):
+def _make_pr(
+    number=1, title="", url="", branch="", reviews=None, ci=None, repo_slug="org/repo"
+):
     return PullRequest(
         number=number,
         title=title,
@@ -42,7 +44,15 @@ def _make_pr(number=1, title="", url="", branch="", reviews=None, ci=None, repo_
     )
 
 
-def _make_state(tmp_path, tasks=None, prs_by_task=None, review_prs=None, linear=None, github=None, on_open_url=_noop):
+def _make_state(
+    tmp_path,
+    tasks=None,
+    prs_by_task=None,
+    review_prs=None,
+    linear=None,
+    github=None,
+    on_open_url=_noop,
+):
     cfg = Config(jora_dir=tmp_path, tmux_prefix=TEST_TMUX_PREFIX)
     alerts = []
     app = App()
@@ -150,7 +160,9 @@ def test_load_marks_and_pr_url(tmp_path):
                 ci=[CheckStatus("FAILURE")],
             )
         ],
-        "PROJ-4": [_make_pr(number=40, branch="feature/proj-4", ci=[CheckStatus("PENDING")])],
+        "PROJ-4": [
+            _make_pr(number=40, branch="feature/proj-4", ci=[CheckStatus("PENDING")])
+        ],
     }
     s, _, app = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
 
@@ -277,7 +289,9 @@ def test_load_sets_done(tmp_path):
 
 def test_load_detects_existing_worktrees(tmp_path):
     _fake_worktree(tmp_path, "myrepo", "proj-1")
-    _, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    _, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     assert app.sections[0].rows[0].worktree is True
 
@@ -286,7 +300,9 @@ def test_load_detects_existing_worktrees(tmp_path):
 
 
 def test_review_shown_with_worktree(tmp_path):
-    review_pr = _make_pr(number=99, title="[PROJ-5] change", branch="proj-5-fix", repo_slug="org/repo")
+    review_pr = _make_pr(
+        number=99, title="[PROJ-5] change", branch="proj-5-fix", repo_slug="org/repo"
+    )
     _fake_worktree(tmp_path, "repo", "review-99")
 
     _, _, app = _loaded_state(tmp_path, review_prs=[review_pr])
@@ -300,7 +316,9 @@ def test_review_shown_with_worktree(tmp_path):
 
 
 def test_review_shows_pr_title(tmp_path):
-    _, _, app = _loaded_state(tmp_path, review_prs=[_make_pr(number=77, title="fix typo", branch="random")])
+    _, _, app = _loaded_state(
+        tmp_path, review_prs=[_make_pr(number=77, title="fix typo", branch="random")]
+    )
     app.next_tab()
 
     row = app.sections[0].rows[0]
@@ -312,7 +330,9 @@ def test_review_shows_pr_title(tmp_path):
 
 
 def test_rebuild_tracks_worktree_lifecycle(tmp_path):
-    _, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    _, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     assert app.sections[0].rows[0].worktree is False
 
     wt = _fake_worktree(tmp_path, "repo", "proj-1")
@@ -333,7 +353,9 @@ def test_rebuild_preserves_data(tmp_path):
         ci=[CheckStatus("SUCCESS")],
     )
     s, _, app = _loaded_state(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}], prs_by_task={"PROJ-1": [pr]}
+        tmp_path,
+        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+        prs_by_task={"PROJ-1": [pr]},
     )
 
     _fake_worktree(tmp_path, "repo", "proj-1")
@@ -370,7 +392,9 @@ def _row_help(s, row):
 
 
 def test_task_row_actions(tmp_path):
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     row = app.sections[0].rows[0]
     help_text = _row_help(s, row)
@@ -381,7 +405,9 @@ def test_task_row_actions(tmp_path):
 
 def test_task_row_actions_with_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     s.open_task("proj-1", "myrepo")
 
     row = app.sections[0].rows[0]
@@ -391,7 +417,9 @@ def test_task_row_actions_with_session(tmp_path):
 def test_task_row_actions_with_pr(tmp_path):
     pr = _make_pr(number=10, url="url1", branch="feature/proj-1")
     s, _, app = _loaded_state(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}], prs_by_task={"PROJ-1": [pr]}
+        tmp_path,
+        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+        prs_by_task={"PROJ-1": [pr]},
     )
 
     row = app.sections[0].rows[0]
@@ -418,8 +446,14 @@ def test_review_row_actions(tmp_path):
 
 def test_open_review_creates_session_for_existing_worktree(tmp_path):
     _fake_worktree(tmp_path, "repo", "review-99")
-    pr = _make_pr(number=99, title="[PROJ-1] fix", branch="proj-1-fix", repo_slug="org/repo")
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}], review_prs=[pr])
+    pr = _make_pr(
+        number=99, title="[PROJ-1] fix", branch="proj-1-fix", repo_slug="org/repo"
+    )
+    s, _, _ = _loaded_state(
+        tmp_path,
+        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+        review_prs=[pr],
+    )
 
     s.open_review(99, "org/repo", "proj-1-fix")
     wt = Worktree("repo", "review-99")
@@ -429,8 +463,14 @@ def test_open_review_creates_session_for_existing_worktree(tmp_path):
 
 def test_open_review_reuses_session(tmp_path):
     _fake_worktree(tmp_path, "repo", "review-99")
-    pr = _make_pr(number=99, title="[PROJ-1] fix", branch="proj-1-fix", repo_slug="org/repo")
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}], review_prs=[pr])
+    pr = _make_pr(
+        number=99, title="[PROJ-1] fix", branch="proj-1-fix", repo_slug="org/repo"
+    )
+    s, _, _ = _loaded_state(
+        tmp_path,
+        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
+        review_prs=[pr],
+    )
 
     s.open_review(99, "org/repo", "proj-1-fix")
     s.open_review(99, "org/repo", "proj-1-fix")
@@ -440,7 +480,9 @@ def test_open_review_reuses_session(tmp_path):
 
 
 def test_open_review_invalid_repo(tmp_path):
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     with pytest.raises(ValueError, match="not registered"):
         s.open_review(99, "org/unknown", "proj-1-fix")
@@ -451,7 +493,9 @@ def test_open_review_invalid_repo(tmp_path):
 
 def test_open_task_creates_worktree_and_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
 
@@ -463,7 +507,9 @@ def test_open_task_creates_worktree_and_session(tmp_path):
 
 def test_open_task_reuses_existing_worktree(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt1 = s.open_task("proj-1", "myrepo")
 
@@ -476,7 +522,9 @@ def test_open_task_reuses_existing_worktree(tmp_path):
 
 def test_open_task_reuses_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     s.open_task("proj-1", "myrepo")
@@ -485,7 +533,9 @@ def test_open_task_reuses_session(tmp_path):
 
 
 def test_open_task_invalid_repo(tmp_path):
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     with pytest.raises(ValueError, match="not registered"):
         s.open_task("proj-1", "nonexistent")
@@ -496,7 +546,9 @@ def test_open_task_invalid_repo(tmp_path):
 
 def test_select_attaches_existing_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     wt = s.open_task("proj-1", "myrepo")
     row = _task_row(app)
 
@@ -507,7 +559,9 @@ def test_select_attaches_existing_session(tmp_path):
 
 def test_select_task_picks_repo_and_opens(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     row = _task_row(app)
 
     with patch("jora.app.pick", return_value=0):
@@ -520,7 +574,9 @@ def test_select_task_picks_repo_and_opens(tmp_path):
 
 def test_select_task_cancelled_repo_pick(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     row = _task_row(app)
 
     with patch("jora.app.pick", return_value=None):
@@ -531,7 +587,9 @@ def test_select_task_cancelled_repo_pick(tmp_path):
 
 def test_select_task_with_worktree_skips_picker(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
     row = _task_row(app)
@@ -545,7 +603,9 @@ def test_select_task_with_worktree_skips_picker(tmp_path):
 
 
 def test_select_no_repos_alerts(tmp_path):
-    s, alerts, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     row = _task_row(app)
 
     dispatch("enter", row, s)
@@ -587,8 +647,12 @@ def test_open_pr_task_without_pr(tmp_path):
 
 def test_open_pr_review(tmp_path):
     opened = []
-    review_pr = _make_pr(number=99, title="fix", url="https://github.com/org/repo/pull/99")
-    s, _, _ = _loaded_state(tmp_path, review_prs=[review_pr], on_open_url=lambda url: opened.append(url))
+    review_pr = _make_pr(
+        number=99, title="fix", url="https://github.com/org/repo/pull/99"
+    )
+    s, _, _ = _loaded_state(
+        tmp_path, review_prs=[review_pr], on_open_url=lambda url: opened.append(url)
+    )
 
     s.on_open_url(review_pr.url)
 
@@ -602,7 +666,13 @@ def test_open_task_linear(tmp_path):
     opened = []
     s, _, _ = _loaded_state(
         tmp_path,
-        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "https://linear.app/proj/PROJ-1"}],
+        tasks=[
+            {
+                "identifier": "PROJ-1",
+                "title": "Task",
+                "url": "https://linear.app/proj/PROJ-1",
+            }
+        ],
         on_open_url=lambda url: opened.append(url),
     )
 
@@ -616,7 +686,9 @@ def test_open_task_linear(tmp_path):
 
 def test_fix_creates_worktree_and_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     s.fix("proj-1", "myrepo")
 
@@ -627,7 +699,9 @@ def test_fix_creates_worktree_and_session(tmp_path):
 
 def test_fix_blocks_when_session_running(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     s.open_task("proj-1", "myrepo")
     s.fix("proj-1", "myrepo")
@@ -637,7 +711,9 @@ def test_fix_blocks_when_session_running(tmp_path):
 
 def test_fix_blocks_when_worktree_dirty(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
@@ -652,7 +728,9 @@ def test_fix_blocks_when_worktree_dirty(tmp_path):
 
 def test_fix_action_picks_repo(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     row = _task_row(app)
 
     with patch("jora.app.pick", return_value=0):
@@ -666,7 +744,9 @@ def test_fix_action_picks_repo(tmp_path):
 
 def test_fix_action_existing_worktree_no_picker(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
     row = _task_row(app)
@@ -680,7 +760,9 @@ def test_fix_action_existing_worktree_no_picker(tmp_path):
 
 def test_fix_action_cancelled_repo_pick(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, app = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
     row = _task_row(app)
 
     with patch("jora.app.pick", return_value=None):
@@ -694,7 +776,9 @@ def test_fix_action_cancelled_repo_pick(tmp_path):
 
 def test_kill_session_kills_running(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     assert s.has_session(wt)
@@ -705,7 +789,9 @@ def test_kill_session_kills_running(tmp_path):
 
 
 def test_kill_session_no_session(tmp_path):
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     s.kill_session(Worktree("myrepo", "proj-1"))
     assert "No session" in " ".join(alerts)
@@ -716,7 +802,9 @@ def test_kill_session_no_session(tmp_path):
 
 def test_delete_worktree_removes_worktree_and_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     assert s.git.find_worktree(wt)
@@ -730,7 +818,9 @@ def test_delete_worktree_removes_worktree_and_session(tmp_path):
 
 def test_delete_worktree_without_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
@@ -743,7 +833,9 @@ def test_delete_worktree_without_session(tmp_path):
 
 
 def test_delete_worktree_no_worktree(tmp_path):
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     s.delete_worktree(Worktree("myrepo", "proj-1"))
     assert "No worktree" in " ".join(alerts)
@@ -754,7 +846,9 @@ def test_delete_worktree_no_worktree(tmp_path):
 
 def test_clean_removes_stale_worktrees(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
@@ -792,7 +886,9 @@ def test_clean_removes_merged_pr_worktree(tmp_path):
 
 def test_clean_keeps_dirty_unmerged_worktree(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, alerts, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
@@ -819,7 +915,9 @@ def test_clean_nothing_to_clean(tmp_path):
 
 def test_queries(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
+    s, _, _ = _loaded_state(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
 
     assert s.repos() == ["myrepo"]
 

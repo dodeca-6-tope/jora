@@ -36,6 +36,7 @@ class Section:
     rows: list[Row] = field(default_factory=list)
     subtitle: str = ""
 
+
 _TASK_ACTIONS = [Select(), Fix(), Kill(), Open(), PR()]
 _REVIEW_ACTIONS = [Select(), Kill(), Delete(), PR()]
 
@@ -59,6 +60,7 @@ def dispatch(key, row, state):
                 state.on_alert(f"Error: {e}")
                 return None
     return None
+
 
 _saved = None
 _active = False
@@ -182,7 +184,11 @@ def _format_row(row: Row, selected: bool) -> str:
     if avail > 3 and len(title) > avail:
         title = title[: avail - 3] + "..."
     cur = _CURSOR if selected else " "
-    marks = " ".join(_MARK.get(m, _MARK["neutral"]) for m in row.marks) if row.marks else f"{_FAINT}○ ○{_RESET}"
+    marks = (
+        " ".join(_MARK.get(m, _MARK["neutral"]) for m in row.marks)
+        if row.marks
+        else f"{_FAINT}○ ○{_RESET}"
+    )
     return f"{cur} {marks} {row.key} {wt} {title}"
 
 
@@ -235,10 +241,12 @@ class Tab:
 class App:
     state: object = None
     _notifications: Notifications = field(default_factory=Notifications)
-    _tabs: list[Tab] = field(default_factory=lambda: [
-        Tab("Tasks", _TASK_ACTIONS, "No tasks"),
-        Tab("Reviews", _REVIEW_ACTIONS, "Nothing to review"),
-    ])
+    _tabs: list[Tab] = field(
+        default_factory=lambda: [
+            Tab("Tasks", _TASK_ACTIONS, "No tasks"),
+            Tab("Reviews", _REVIEW_ACTIONS, "Nothing to review"),
+        ]
+    )
     _tab_idx: int = 0
     _spin: int = 0
 
@@ -375,7 +383,11 @@ class App:
             parts = []
             if len(self._tabs) > 1:
                 parts.append("[⇥] switch")
-            pairs = [(a.key, a.label) for a in actions_for(cur_row) if a.enabled(self.state, cur_row)]
+            pairs = [
+                (a.key, a.label)
+                for a in actions_for(cur_row)
+                if a.enabled(self.state, cur_row)
+            ]
             help_text = "  ".join(f"[{k}] {l}" for k, l in pairs)
             if help_text:
                 parts.append(help_text)
