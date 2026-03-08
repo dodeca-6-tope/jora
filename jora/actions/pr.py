@@ -8,6 +8,12 @@ class PR(Action):
 
     def run(self, s, row):
         if isinstance(row.data, TaskItem):
-            s.open_task_pr(row.data.id)
+            if row.data.pr_url:
+                s.on_open_url(row.data.pr_url)
+            else:
+                s.on_alert("No PR for this task")
         else:
-            s.on_open_url(row.data.url)
+            item = row.data
+            s.on_open_url(
+                f"https://github.com/{item.repo_slug}/pull/{item.number}"
+            )

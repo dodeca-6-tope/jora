@@ -19,6 +19,7 @@ class TaskItem:
     id: str
     title: str
     url: str
+    pr_url: str = ""
     wt: Worktree | None = None
     review_status: str = ""
     ci_status: str = ""
@@ -30,7 +31,6 @@ class ReviewItem:
     id: str
     number: int
     title: str
-    url: str
     repo_slug: str = ""
     branch: str = ""
     wt: Worktree | None = None
@@ -188,6 +188,7 @@ class State:
                     id=task_id,
                     title=task.title,
                     url=task.url,
+                    pr_url=pr.url if pr else "",
                     wt=wt,
                     review_status=review_status,
                     ci_status=ci_status,
@@ -204,31 +205,32 @@ class State:
             # Worktree identity derived from PR's repo + number
             repo_name = pr.repo_slug.split("/")[-1]
             wt = Worktree(repo_name, f"review-{pr.number}")
+            exists = self.git.find_worktree(wt) is not None
             review_status, ci_status = self._pr_marks(pr)
             items.append(
                 ReviewItem(
                     id=wt.key,
                     number=pr.number,
                     title=pr.title,
-                    url=pr.url,
                     repo_slug=pr.repo_slug,
                     branch=pr.head_ref,
-                    wt=wt,
+                    wt=wt if exists else None,
                     review_status=review_status,
                     ci_status=ci_status,
-                    session=self._session_name(wt) in sessions,
+                    session=exists and self._session_name(wt) in sessions,
                 )
             )
         return items
 
     # -- Operations ----------------------------------------------------------
 
-    def _ensure_session(self, wt: Worktree):
-        """Create a tmux session for the worktree if one doesn't exist."""
+    def create_session(self, wt: Worktree):
+        """Create a tmux session for an existing worktree."""
         name = self._session_name(wt)
         if not self.tmux.has_session(name):
             path = self.git.find_worktree(wt)
             self.tmux.create_session(name, str(path))
+        self.on_change()
 
     def attach(self, wt: Worktree):
         """Attach to the tmux session for a worktree."""
@@ -236,20 +238,21 @@ class State:
         self.on_attach(name)
         self.on_change()
 
-    def open_task(self, task_id: str, repo: str = None) -> Worktree:
-        """Ensure worktree and session exist for a task. Creates worktree in repo if needed."""
+    def create_task_worktree(self, task_id: str, repo: str = None) -> Worktree:
+        """Ensure worktree exists for a task. Creates in repo if needed."""
         wt = self.git.find_worktree_by_key(task_id.lower())
         if not wt:
             rp = self.git.repo_path(repo)
             if not rp:
                 raise ValueError(f"Repo {repo} not registered")
             wt = self.git.switch_to_task(task_id, rp)
-        self._ensure_session(wt)
         self.on_change()
         return wt
 
-    def open_review(self, number: int, repo_slug: str, branch: str) -> Worktree:
-        """Ensure worktree and session exist for a review PR. Checks out branch if needed."""
+    def create_review_worktree(
+        self, number: int, repo_slug: str, branch: str
+    ) -> Worktree:
+        """Ensure worktree exists for a review PR. Checks out branch if needed."""
         repo_name = repo_slug.split("/")[-1]
         wt = Worktree(repo_name, f"review-{number}")
         if not self.git.find_worktree(wt):
@@ -257,17 +260,8 @@ class State:
             if not rp:
                 raise ValueError(f"Repo {repo_name} not registered")
             self.git.checkout_pr(number, branch, rp)
-        self._ensure_session(wt)
         self.on_change()
         return wt
-
-    def open_task_pr(self, task_id: str):
-        """Open the PR URL for a task, or alert if none exists."""
-        url = self.task_pr_url(task_id)
-        if url:
-            self.on_open_url(url)
-        else:
-            self.on_alert("No PR for this task")
 
     def open_task_linear(self, task_id: str):
         """Open the Linear issue URL for a task."""
@@ -287,7 +281,8 @@ class State:
         if wt and not self.git.is_worktree_clean(wt):
             self.on_alert("Worktree has changes — use ⏎ to attach")
             return
-        wt = self.open_task(task_id, repo)
+        wt = self.create_task_worktree(task_id, repo)
+        self.create_session(wt)
         name = self._session_name(wt)
         self.tmux.send_keys(name, agent.command(f"Fix task {task_id}"))
 

@@ -408,7 +408,8 @@ def test_task_row_actions_with_session(tmp_path):
     s, _, app = _loaded_state(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
-    s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
 
     row = app.sections[0].rows[0]
     assert "kill" in _row_help(s, row)
@@ -455,8 +456,8 @@ def test_open_review_creates_session_for_existing_worktree(tmp_path):
         review_prs=[pr],
     )
 
-    s.open_review(99, "org/repo", "proj-1-fix")
-    wt = Worktree("repo", "review-99")
+    wt = s.create_review_worktree(99, "org/repo", "proj-1-fix")
+    s.create_session(wt)
 
     assert s.has_session(wt)
 
@@ -472,9 +473,9 @@ def test_open_review_reuses_session(tmp_path):
         review_prs=[pr],
     )
 
-    s.open_review(99, "org/repo", "proj-1-fix")
-    s.open_review(99, "org/repo", "proj-1-fix")
-    wt = Worktree("repo", "review-99")
+    wt = s.create_review_worktree(99, "org/repo", "proj-1-fix")
+    s.create_session(wt)
+    s.create_session(wt)
 
     assert s.has_session(wt)
 
@@ -485,7 +486,7 @@ def test_open_review_invalid_repo(tmp_path):
     )
 
     with pytest.raises(ValueError, match="not registered"):
-        s.open_review(99, "org/unknown", "proj-1-fix")
+        s.create_review_worktree(99, "org/unknown", "proj-1-fix")
 
 
 # -- open_task() -------------------------------------------------------------
@@ -497,7 +498,8 @@ def test_open_task_creates_worktree_and_session(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
 
     assert s.git.find_worktree(wt)
     assert s.has_session(wt)
@@ -511,13 +513,10 @@ def test_open_task_reuses_existing_worktree(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt1 = s.open_task("proj-1", "myrepo")
-
-    s.kill_session(wt1)
-    wt2 = s.open_task("proj-1", "myrepo")
+    wt1 = s.create_task_worktree("proj-1", "myrepo")
+    wt2 = s.create_task_worktree("proj-1", "myrepo")
 
     assert wt1 == wt2
-    assert s.has_session(wt2)
 
 
 def test_open_task_reuses_session(tmp_path):
@@ -526,8 +525,9 @@ def test_open_task_reuses_session(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
-    s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
+    s.create_task_worktree("proj-1", "myrepo")
 
     assert s.has_session(wt)
 
@@ -538,7 +538,7 @@ def test_open_task_invalid_repo(tmp_path):
     )
 
     with pytest.raises(ValueError, match="not registered"):
-        s.open_task("proj-1", "nonexistent")
+        s.create_task_worktree("proj-1", "nonexistent")
 
 
 # -- select() ---------------------------------------------------------------
@@ -549,7 +549,8 @@ def test_select_attaches_existing_session(tmp_path):
     s, _, app = _loaded_state(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     row = _task_row(app)
 
     dispatch("enter", row, s)
@@ -590,7 +591,8 @@ def test_select_task_with_worktree_skips_picker(tmp_path):
     s, _, app = _loaded_state(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
     row = _task_row(app)
 
@@ -611,52 +613,6 @@ def test_select_no_repos_alerts(tmp_path):
     dispatch("enter", row, s)
 
     assert "No repos" in " ".join(alerts)
-
-
-# -- open_task_pr() ----------------------------------------------------------
-
-
-def test_open_pr_task_with_pr(tmp_path):
-    opened = []
-    pr = _make_pr(number=10, url="https://github.com/org/repo/pull/10", branch="proj-1")
-    s, _, _ = _loaded_state(
-        tmp_path,
-        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
-        prs_by_task={"PROJ-1": [pr]},
-        on_open_url=lambda url: opened.append(url),
-    )
-
-    s.open_task_pr("PROJ-1")
-
-    assert opened == ["https://github.com/org/repo/pull/10"]
-
-
-def test_open_pr_task_without_pr(tmp_path):
-    opened = []
-    s, alerts, _ = _loaded_state(
-        tmp_path,
-        tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
-        on_open_url=lambda url: opened.append(url),
-    )
-
-    s.open_task_pr("PROJ-1")
-
-    assert opened == []
-    assert "No PR" in " ".join(alerts)
-
-
-def test_open_pr_review(tmp_path):
-    opened = []
-    review_pr = _make_pr(
-        number=99, title="fix", url="https://github.com/org/repo/pull/99"
-    )
-    s, _, _ = _loaded_state(
-        tmp_path, review_prs=[review_pr], on_open_url=lambda url: opened.append(url)
-    )
-
-    s.on_open_url(review_pr.url)
-
-    assert opened == ["https://github.com/org/repo/pull/99"]
 
 
 # -- open_task_linear() ------------------------------------------------------
@@ -703,7 +659,8 @@ def test_fix_blocks_when_session_running(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.fix("proj-1", "myrepo")
 
     assert "already running" in " ".join(alerts)
@@ -715,7 +672,8 @@ def test_fix_blocks_when_worktree_dirty(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
 
     path = s.git.find_worktree(wt)
@@ -747,7 +705,8 @@ def test_fix_action_existing_worktree_no_picker(tmp_path):
     s, _, app = _loaded_state(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
     row = _task_row(app)
 
@@ -780,7 +739,8 @@ def test_kill_session_kills_running(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     assert s.has_session(wt)
 
     s.kill_session(wt)
@@ -806,7 +766,8 @@ def test_delete_worktree_removes_worktree_and_session(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     assert s.git.find_worktree(wt)
     assert s.has_session(wt)
 
@@ -822,7 +783,8 @@ def test_delete_worktree_without_session(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
     assert s.git.find_worktree(wt)
     assert not s.has_session(wt)
@@ -850,7 +812,8 @@ def test_clean_removes_stale_worktrees(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
 
     s.clean()
@@ -871,7 +834,8 @@ def test_clean_removes_merged_pr_worktree(tmp_path):
         github=MergedGitHub(),
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
 
     path = s.git.find_worktree(wt)
@@ -890,7 +854,8 @@ def test_clean_keeps_dirty_unmerged_worktree(tmp_path):
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
     s.kill_session(wt)
 
     path = s.git.find_worktree(wt)
@@ -921,7 +886,8 @@ def test_queries(tmp_path):
 
     assert s.repos() == ["myrepo"]
 
-    wt = s.open_task("proj-1", "myrepo")
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    s.create_session(wt)
 
     assert s.git.find_worktree(wt)
     assert s.has_session(wt)
@@ -940,9 +906,7 @@ def test_repos_sorted_by_usage(tmp_path):
 
     assert s.repos() == ["alpha", "beta"]
 
-    wt1 = s.open_task("proj-1", "beta")
-    wt2 = s.open_task("proj-2", "beta")
-    s.kill_session(wt1)
-    s.kill_session(wt2)
+    s.create_task_worktree("proj-1", "beta")
+    s.create_task_worktree("proj-2", "beta")
 
     assert s.repos()[0] == "beta"

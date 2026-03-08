@@ -21,14 +21,16 @@ class Select(Action):
                 return
 
             def open_and_attach():
-                wt = s.open_task(task_id, repo)
+                wt = s.create_task_worktree(task_id, repo)
+                s.create_session(wt)
                 s.on_defer(lambda: s.attach(wt))
 
             s.run(open_and_attach, "Opening")
         else:
 
             def open_and_attach():
-                wt = s.open_review(item.number, item.repo_slug, item.branch)
+                wt = s.create_review_worktree(item.number, item.repo_slug, item.branch)
+                s.create_session(wt)
                 s.on_defer(lambda: s.attach(wt))
 
             s.run(open_and_attach, "Opening")
