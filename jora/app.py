@@ -86,21 +86,26 @@ _MARK = {
 }
 
 
-# -- Data types (view model) -------------------------------------------------
+# -- Terminal setup / teardown -----------------------------------------------
 
 
-# -- Setup / teardown --------------------------------------------------------
+def _enter_raw():
+    tty.setraw(_fd)
+    attrs = termios.tcgetattr(_fd)
+    attrs[1] |= termios.OPOST
+    termios.tcsetattr(_fd, termios.TCSADRAIN, attrs)
+
+
+def _restore_terminal():
+    if _saved:
+        termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
 
 
 def _init():
     global _saved, _active, _fd
     _fd = sys.stdin.fileno()
     _saved = termios.tcgetattr(_fd)
-    tty.setraw(_fd)
-    # Re-enable output processing so \n produces \r\n
-    attrs = termios.tcgetattr(_fd)
-    attrs[1] |= termios.OPOST
-    termios.tcsetattr(_fd, termios.TCSADRAIN, attrs)
+    _enter_raw()
     _active = True
     sys.stdout.write("\033[?1049h\033[?25l\033[?1004h")
     sys.stdout.flush()
@@ -114,24 +119,19 @@ def _cleanup():
     _active = False
     sys.stdout.write("\033[?1004l\033[?25h\033[?1049l")
     sys.stdout.flush()
-    if _saved:
-        termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
+    _restore_terminal()
 
 
 def suspend():
     """Leave alt screen and restore terminal for a child process."""
     sys.stdout.write("\033[?25h\033[?1049l")
     sys.stdout.flush()
-    if _saved:
-        termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
+    _restore_terminal()
 
 
 def resume():
     """Re-enter alt screen and raw mode after a child process."""
-    tty.setraw(_fd)
-    attrs = termios.tcgetattr(_fd)
-    attrs[1] |= termios.OPOST
-    termios.tcsetattr(_fd, termios.TCSADRAIN, attrs)
+    _enter_raw()
     sys.stdout.write("\033[?1049h\033[?25l")
     sys.stdout.flush()
 
