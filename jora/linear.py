@@ -1,7 +1,15 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Dict, List
 
 import requests
+
+
+@dataclass
+class Task:
+    identifier: str
+    title: str
+    url: str
 
 LINEAR_API_URL = "https://api.linear.app/graphql"
 
@@ -14,11 +22,8 @@ class Tracker(ABC):
         """Return the authenticated user's display name."""
 
     @abstractmethod
-    def fetch_tasks(self) -> List[Dict]:
-        """Return active tasks assigned to the current user.
-
-        Each task dict must contain: identifier, title, url.
-        """
+    def fetch_tasks(self) -> List[Task]:
+        """Return active tasks assigned to the current user."""
 
 
 class LinearClient(Tracker):
@@ -39,7 +44,7 @@ class LinearClient(Tracker):
         result = self._graphql("{ viewer { name } }")
         return result.get("viewer", {}).get("name", "Unknown")
 
-    def fetch_tasks(self) -> List[Dict]:
+    def fetch_tasks(self) -> List[Task]:
         query = """
         {
             viewer {
@@ -54,4 +59,5 @@ class LinearClient(Tracker):
         }
         """
         result = self._graphql(query)
-        return result.get("viewer", {}).get("assignedIssues", {}).get("nodes", [])
+        nodes = result.get("viewer", {}).get("assignedIssues", {}).get("nodes", [])
+        return [Task(identifier=n["identifier"], title=n["title"], url=n["url"]) for n in nodes]

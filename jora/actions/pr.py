@@ -1,22 +1,13 @@
-import webbrowser
 from jora.actions.action import Action
+from jora.state import TaskItem
 
 
 class PR(Action):
     key = "p"
     label = "PR"
 
-    def enabled(self, s, row):
-        if "identifier" in row.data:
-            return s.task_pr_url(row.data["identifier"]) is not None
-        return True
-
     def run(self, s, row):
-        if "identifier" in row.data:
-            url = s.task_pr_url(row.data["identifier"])
-            if url:
-                webbrowser.open(url)
-            else:
-                s.menu.message = "No PR for this task"
+        if isinstance(row.data, TaskItem):
+            s.open_task_pr(row.data.id)
         else:
-            webbrowser.open(row.data["url"])
+            s.on_open_url(row.data.url)

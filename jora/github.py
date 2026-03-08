@@ -1,8 +1,38 @@
-import json
 import re
-import subprocess
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Dict, List
+
+import requests
+
+
+@dataclass
+class CheckStatus:
+    """A CI check result (CheckRun conclusion or StatusContext state)."""
+
+    conclusion: str  # SUCCESS, FAILURE, NEUTRAL, PENDING, etc.
+
+
+@dataclass
+class PullRequestReview:
+    """A review on a pull request."""
+
+    state: str  # APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING
+    author_login: str
+
+
+@dataclass
+class PullRequest:
+    number: int
+    title: str
+    url: str
+    body: str
+    head_ref: str
+    author_login: str
+    repo_slug: str
+    reviews: List[PullRequestReview] = field(default_factory=list)
+    checks: List[CheckStatus] = field(default_factory=list)
+
 
 _PR_FIELDS = """
   ... on PullRequest {
@@ -33,76 +63,156 @@ _PR_FIELDS = """
   }
 """
 
-_AUTHORED_QUERY = """
+_AUTHORED_QUERY = (
+    """
 {
   search(query: "is:pr is:open author:@me", type: ISSUE, first: 100) {
     nodes { %s }
   }
 }
-""" % _PR_FIELDS
+"""
+    % _PR_FIELDS
+)
 
-_REVIEW_QUERY = """
+_REVIEW_QUERY = (
+    """
 query($q: String!) {
   search(query: $q, type: ISSUE, first: 100) {
     nodes { %s }
   }
 }
-""" % _PR_FIELDS
+"""
+    % _PR_FIELDS
+)
+
+
+# -- Analysis ---------------------------------------------------------------
+
+
+def analyze_pr(pr: PullRequest) -> tuple:
+    """Return (review_status, ci_status) for a PR."""
+    return (_review_status(pr.reviews), _ci_status(pr.checks))
+
+
+def _ci_status(checks: List[CheckStatus]) -> str:
+    if not checks:
+        return "NONE"
+    if all(c.conclusion == "SUCCESS" for c in checks):
+        return "SUCCESS"
+    if any(c.conclusion == "FAILURE" for c in checks):
+        return "FAILURE"
+    return "PENDING"
+
+
+def _review_status(reviews: List[PullRequestReview]) -> str:
+    if not reviews:
+        return "NO_REVIEWS"
+    latest_by_reviewer = {}
+    for r in reviews:
+        if r.author_login:
+            latest_by_reviewer[r.author_login] = r
+    latest = list(latest_by_reviewer.values())
+    if any(r.state == "CHANGES_REQUESTED" for r in latest):
+        return "CHANGES_REQUESTED"
+    if any(r.state == "APPROVED" for r in latest):
+        return "APPROVED"
+    return "REVIEW_REQUIRED"
+
+
+def _latest_review_by(pr: PullRequest, login: str) -> str:
+    for r in reversed(pr.reviews):
+        if r.author_login == login:
+            return r.state
+    return ""
+
+
+# -- Normalization ----------------------------------------------------------
+
+
+def _match_prs_to_tasks(task_keys: List[str], all_prs: List[PullRequest]) -> Dict[str, List[PullRequest]]:
+    result = {}
+    for key in task_keys:
+        pattern = re.compile(re.escape(key) + r"(?!\w)", re.IGNORECASE)
+        matches = [
+            pr
+            for pr in all_prs
+            if pattern.search(pr.title)
+            or pattern.search(pr.head_ref)
+            or pattern.search(pr.body)
+        ]
+        matches.sort(key=lambda pr: 0 if pattern.search(pr.head_ref) else 1)
+        if matches:
+            result[key] = matches
+    return result
+
+
+def _parse_pr(node: Dict) -> PullRequest:
+    reviews = [
+        PullRequestReview(
+            state=r["state"],
+            author_login=(r.get("author") or {}).get("login", ""),
+        )
+        for r in (node.get("reviews", {}).get("nodes", []) or [])
+    ]
+    commits = node.get("commits", {}).get("nodes", []) or []
+    checks = []
+    if commits:
+        rollup = commits[0].get("commit", {}).get("statusCheckRollup") or {}
+        checks = [
+            CheckStatus(conclusion=ctx.get("conclusion") or ctx.get("state") or "")
+            for ctx in (rollup.get("contexts", {}).get("nodes", []) or [])
+        ]
+    return PullRequest(
+        number=node["number"],
+        title=node.get("title", ""),
+        url=node.get("url", ""),
+        body=node.get("body", ""),
+        head_ref=node.get("headRefName", ""),
+        author_login=(node.get("author") or {}).get("login", ""),
+        repo_slug=(node.get("repository") or {}).get("nameWithOwner", ""),
+        reviews=reviews,
+        checks=checks,
+    )
+
+
+# -- Abstract + Client ------------------------------------------------------
 
 
 class GitHub(ABC):
     """GitHub API backend for PRs, reviews, and CI status."""
 
     @abstractmethod
-    def whoami(self) -> str:
-        """Return the authenticated GitHub username."""
+    def whoami(self) -> str: ...
 
     @abstractmethod
-    def warm(self):
-        """Pre-fetch and cache the current user login."""
+    def warm(self): ...
 
     @abstractmethod
-    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[Dict]]:
-        """Fetch open PRs authored by the current user, matched to task keys.
-
-        Returns {task_key: [matching_prs]}.
-        """
+    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[PullRequest]]: ...
 
     @abstractmethod
-    def fetch_review_prs(self, repo_slugs: List[str]) -> List[Dict]:
-        """Return open PRs needing the current user's review."""
+    def fetch_review_prs(self, repo_slugs: List[str]) -> List[PullRequest]: ...
 
     @abstractmethod
-    def repo_slug(self, repo_dir: str) -> str:
-        """Return 'owner/repo' for a local git repo directory."""
-
-    @abstractmethod
-    def is_pr_merged(self, repo_dir: str, branch: str) -> bool:
-        """Check if the PR for a branch has been merged."""
-
-    @abstractmethod
-    def analyze_pr(self, pr: Dict) -> tuple:
-        """Return (review_status, ci_status) for a PR.
-
-        review_status: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or NO_REVIEWS.
-        ci_status: SUCCESS, FAILURE, PENDING, or NONE.
-        """
+    def is_branch_merged(self, slug: str, branch: str) -> bool: ...
 
 
 class GitHubClient(GitHub):
-    def __init__(self):
+    _API = "https://api.github.com"
+
+    def __init__(self, token: str):
+        self._token = token
         self._login = None
+        self._session = requests.Session()
+        self._session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
 
     def whoami(self) -> str:
         if self._login is not None:
             return self._login
-        r = subprocess.run(
-            ["gh", "api", "user", "-q", ".login"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if r.returncode != 0 or not r.stdout.strip():
-            raise RuntimeError(r.stderr.strip() or "gh auth failed — run: gh auth login")
-        self._login = r.stdout.strip()
+        r = self._session.get(f"{self._API}/user", timeout=10)
+        if r.status_code != 200:
+            raise RuntimeError("GitHub auth failed — run: jora auth --reset")
+        self._login = r.json()["login"]
         return self._login
 
     def warm(self):
@@ -111,24 +221,16 @@ class GitHubClient(GitHub):
         except Exception:
             pass
 
-    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[Dict]]:
-        all_prs = self._fetch_authored_prs()
-        return self._match_prs_to_tasks(task_keys, all_prs)
-
-    def _fetch_authored_prs(self) -> List[Dict]:
+    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[PullRequest]]:
         try:
-            result = subprocess.run(
-                ["gh", "api", "graphql", "-f", f"query={_AUTHORED_QUERY}"],
-                capture_output=True, text=True, timeout=15,
-            )
-            if result.returncode != 0 or not result.stdout.strip():
-                return []
-            nodes = json.loads(result.stdout).get("data", {}).get("search", {}).get("nodes", [])
-            return [self._normalize_pr(n) for n in nodes if n]
-        except (subprocess.SubprocessError, json.JSONDecodeError):
-            return []
+            r = self._graphql(_AUTHORED_QUERY)
+            nodes = r.get("data", {}).get("search", {}).get("nodes", [])
+            all_prs = [_parse_pr(n) for n in nodes if n]
+        except (requests.RequestException, KeyError):
+            all_prs = []
+        return _match_prs_to_tasks(task_keys, all_prs)
 
-    def fetch_review_prs(self, repo_slugs: List[str]) -> List[Dict]:
+    def fetch_review_prs(self, repo_slugs: List[str]) -> List[PullRequest]:
         if not repo_slugs:
             return []
         from concurrent.futures import ThreadPoolExecutor
@@ -148,122 +250,48 @@ class GitHubClient(GitHub):
             for n in fut_requested.result():
                 if n:
                     requested.add(n.get("number"))
-                    prs_by_number.setdefault(n["number"], self._normalize_pr(n))
+                    prs_by_number.setdefault(n["number"], _parse_pr(n))
             for n in fut_reviewed.result():
                 if n:
-                    prs_by_number.setdefault(n["number"], self._normalize_pr(n))
+                    prs_by_number.setdefault(n["number"], _parse_pr(n))
 
             return [
-                pr for num, pr in prs_by_number.items()
-                if num in requested or self._my_latest_review(pr, login) != "APPROVED"
+                pr
+                for num, pr in prs_by_number.items()
+                if num in requested or _latest_review_by(pr, login) != "APPROVED"
             ]
-        except (subprocess.SubprocessError, json.JSONDecodeError):
+        except (requests.RequestException, KeyError):
             return []
 
-    def repo_slug(self, repo_dir: str) -> str:
+    def is_branch_merged(self, slug: str, branch: str) -> bool:
+        if not slug:
+            return False
+        query = """
+        query($owner: String!, $repo: String!, $branch: String!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequests(headRefName: $branch, states: [MERGED], first: 1) {
+              nodes { state }
+            }
+          }
+        }
+        """
+        owner, repo = slug.split("/", 1)
         try:
-            r = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True, text=True, timeout=5, cwd=repo_dir,
-            )
-            url = r.stdout.strip()
-            if not url:
-                return ""
-            m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
-            return m.group(1) if m else ""
-        except subprocess.SubprocessError:
-            return ""
-
-    def is_pr_merged(self, repo_dir: str, branch: str) -> bool:
-        try:
-            r = subprocess.run(
-                ["gh", "pr", "view", branch, "--json", "state", "-q", ".state"],
-                capture_output=True, text=True, timeout=10, cwd=repo_dir,
-            )
-            return r.stdout.strip() == "MERGED"
-        except subprocess.SubprocessError:
+            r = self._graphql(query, owner=owner, repo=repo, branch=branch)
+            nodes = r.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+            return len(nodes) > 0
+        except (requests.RequestException, KeyError):
             return False
 
-    def analyze_pr(self, pr: Dict) -> tuple:
-        return (self._analyze_reviews(pr.get("reviews", [])),
-                self._analyze_ci(pr.get("statusCheckRollup", [])))
-
-    def _match_prs_to_tasks(self, task_keys: List[str], all_prs: List[Dict]) -> Dict[str, List[Dict]]:
-        result = {}
-        for key in task_keys:
-            pattern = re.compile(re.escape(key) + r"(?!\w)", re.IGNORECASE)
-            matches = [
-                pr for pr in all_prs
-                if pattern.search(pr.get("title", ""))
-                or pattern.search(pr.get("headRefName", ""))
-                or pattern.search(pr.get("body", ""))
-            ]
-            matches.sort(key=lambda pr: 0 if pattern.search(pr.get("headRefName", "")) else 1)
-            if matches:
-                result[key] = matches
-        return result
-
-    def _analyze_ci(self, checks: List[Dict]) -> str:
-        if not checks:
-            return "NONE"
-        if all(c.get("conclusion") == "SUCCESS" for c in checks):
-            return "SUCCESS"
-        if any(c.get("conclusion") == "FAILURE" for c in checks):
-            return "FAILURE"
-        return "PENDING"
-
-    def _analyze_reviews(self, reviews: List[Dict]) -> str:
-        if not reviews:
-            return "NO_REVIEWS"
-        latest_by_reviewer = {}
-        for r in reviews:
-            login = r.get("author", {}).get("login", "")
-            if login:
-                latest_by_reviewer[login] = r
-        latest = list(latest_by_reviewer.values())
-        if any(r["state"] == "CHANGES_REQUESTED" for r in latest):
-            return "CHANGES_REQUESTED"
-        if any(r["state"] == "APPROVED" for r in latest):
-            return "APPROVED"
-        return "REVIEW_REQUIRED"
-
-    def _my_latest_review(self, pr: Dict, login: str) -> str:
-        for r in reversed(pr.get("reviews", [])):
-            if r.get("author", {}).get("login") == login:
-                return r["state"]
-        return ""
+    def _graphql(self, query: str, **variables) -> Dict:
+        body = {"query": query}
+        if variables:
+            body["variables"] = variables
+        r = self._session.post(f"{self._API}/graphql", json=body, timeout=15)
+        r.raise_for_status()
+        return r.json()
 
     def _fetch_search(self, scope: str, repo_filter: str) -> List[Dict]:
         q = f"is:pr is:open -author:@me {scope} {repo_filter}"
-        result = subprocess.run(
-            ["gh", "api", "graphql", "-f", f"query={_REVIEW_QUERY}", "-f", f"q={q}"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            return []
-        return json.loads(result.stdout).get("data", {}).get("search", {}).get("nodes", [])
-
-    def _normalize_pr(self, node: Dict) -> Dict:
-        reviews = [
-            {"state": r["state"], "author": r.get("author", {})}
-            for r in (node.get("reviews", {}).get("nodes", []) or [])
-        ]
-        commits = node.get("commits", {}).get("nodes", []) or []
-        checks = []
-        if commits:
-            rollup = commits[0].get("commit", {}).get("statusCheckRollup") or {}
-            checks = [
-                {"conclusion": ctx.get("conclusion") or ctx.get("state") or ""}
-                for ctx in (rollup.get("contexts", {}).get("nodes", []) or [])
-            ]
-        return {
-            "number": node.get("number"),
-            "title": node.get("title", ""),
-            "url": node.get("url", ""),
-            "body": node.get("body", ""),
-            "headRefName": node.get("headRefName", ""),
-            "author": (node.get("author") or {}).get("login", ""),
-            "repoSlug": (node.get("repository") or {}).get("nameWithOwner", ""),
-            "reviews": reviews,
-            "statusCheckRollup": checks,
-        }
+        r = self._graphql(_REVIEW_QUERY, q=q)
+        return r.get("data", {}).get("search", {}).get("nodes", [])

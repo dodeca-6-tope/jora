@@ -1,5 +1,15 @@
 from jora.actions.action import Action
-from jora.actions.select import pick_repo
+
+
+def _pick_repo(s, task_id):
+    from jora.app import pick
+
+    repos = s.repos()
+    if not repos:
+        s.on_alert("No repos. Run: jora add <path>")
+        return None
+    idx = pick(f"Repo for {task_id}", repos)
+    return repos[idx] if idx is not None else None
 
 
 class Fix(Action):
@@ -7,12 +17,11 @@ class Fix(Action):
     label = "fix"
 
     def run(self, s, row):
-        repo = None
-        if not s.has_worktree(row.wt_key):
-            repo = pick_repo(s, row.data["identifier"])
+        task_id = row.data.id
+        if not s.worktree_path(task_id):
+            repo = _pick_repo(s, task_id)
             if not repo:
                 return
-        try:
-            s.menu.spin("Starting fix", lambda: s.fix(row.data["identifier"], repo))
-        except Exception as e:
-            s.menu.message = f"Error: {e}"
+            s.run(lambda: s.fix(task_id, repo), "Starting fix")
+        else:
+            s.fix(task_id)

@@ -1,16 +1,18 @@
 """Interactive task picker UI."""
 
 import argparse
+import collections
 import sys
+import webbrowser
 
+from jora import keychain
+from jora.app import App, dispatch, resume, suspend
 from jora.config import Config
 from jora.git import Git
-from jora.tmux import Tmux
-from jora import keychain
-from jora.linear import LinearClient
 from jora.github import GitHubClient
-from jora.term import Menu
+from jora.linear import LinearClient
 from jora.state import State
+from jora.tmux import Tmux
 
 # -- Shell init (jora init <shell>) ------------------------------------------
 
@@ -38,6 +40,7 @@ compdef _jora jora
 
 
 # -- Entry point --------------------------------------------------------------
+
 
 def _parse_args():
     parser = argparse.ArgumentParser(prog="jora", description="Linear task switcher with git worktrees")
@@ -67,29 +70,8 @@ def main():
         return
 
     if args.command == "auth":
-        existing = keychain.get("linear")
-        if existing and not args.reset:
-            try:
-                name = LinearClient(existing).whoami()
-                print(f"Linear: authenticated as {name}")
-            except Exception:
-                print("Stored key is invalid — run: jora auth --reset")
-        else:
-            key = input("Linear API key (https://linear.app/settings/api): ").strip()
-            if not key:
-                print("No API key provided")
-                sys.exit(1)
-            try:
-                name = LinearClient(key).whoami()
-                keychain.store("linear", key)
-                print(f"Linear: authenticated as {name}")
-            except Exception as e:
-                print(f"Invalid key: {e}", file=sys.stderr)
-                sys.exit(1)
-        try:
-            print(f"GitHub: authenticated as {GitHubClient().whoami()}")
-        except Exception:
-            print("GitHub: not authenticated — run: gh auth login")
+        keychain.auth("Linear", "linear", "https://linear.app/settings/api", lambda k: LinearClient(k).whoami(), args.reset)
+        keychain.auth("GitHub", "github", "https://github.com/settings/tokens", lambda k: GitHubClient(k).whoami(), args.reset)
         return
 
     if args.command == "add":
@@ -110,30 +92,40 @@ def main():
             sys.exit(1)
         return
 
-    api_key = keychain.get("linear")
-    if not api_key:
-        print("No API key — run: jora auth")
-        sys.exit(1)
-    linear = LinearClient(api_key)
-    github = GitHubClient()
+    linear = LinearClient(keychain.require("linear", "Linear"))
+    github = GitHubClient(keychain.require("github", "GitHub"))
 
-    with Menu() as menu:
-        s = State(git=git, tmux=tmux, linear=linear, github=github, menu=menu)
+    with App() as app:
+        pending = collections.deque()
+        s = State(
+            git=git,
+            tmux=tmux,
+            linear=linear,
+            github=github,
+            on_alert=app.alert,
+            on_attach=lambda name: (suspend(), tmux.attach_session(name), resume()),
+            on_open_url=webbrowser.open,
+            on_defer=pending.append,
+            on_change=lambda: app.rebuild(),
+        )
+        app.state = s
         s.load()
 
         while True:
-
             try:
-                key, sec, row = menu.tick()
+                while pending:
+                    pending.popleft()()
+                key, row = app.tick()
             except KeyboardInterrupt:
                 break
 
-            if key is None:
+            if key == "focus":
+                s.maybe_reload(force=True)
                 continue
-            if not sec or not row:
+            if key == "tab":
+                app.next_tab()
                 continue
-            for action in row.actions:
-                if action.matches(key):
-                    if action.run(s, row) == "exit":
-                        return
-                    break
+            if dispatch(key, row, s) == "exit":
+                return
+            if not key:
+                s.maybe_reload()

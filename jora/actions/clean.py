@@ -1,5 +1,3 @@
-import threading
-
 from jora.actions.action import Action
 
 
@@ -8,4 +6,4 @@ class Clean(Action):
     label = "clean"
 
     def run(self, s, _row):
-        threading.Thread(target=s.clean, daemon=True).start()
+        s.run(s.clean)

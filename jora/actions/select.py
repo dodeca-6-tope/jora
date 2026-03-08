@@ -1,14 +1,6 @@
 from jora.actions.action import Action
-from jora.term import pick, suspend, resume
-
-
-def pick_repo(s, task_id):
-    repos = s.repos()
-    if not repos:
-        s.menu.message = "No repos. Run: jora add <path>"
-        return None
-    idx = pick(f"Repo for {task_id}", repos)
-    return repos[idx] if idx is not None else None
+from jora.actions.fix import _pick_repo
+from jora.state import TaskItem
 
 
 class Select(Action):
@@ -17,19 +9,16 @@ class Select(Action):
     aliases = ("enter", "s")
 
     def run(self, s, row):
-        if not s.has_session(row.wt_key):
-            try:
-                if "identifier" in row.data:
-                    repo = pick_repo(s, row.data["identifier"]) if not s.has_worktree(row.wt_key) else None
-                    if not s.has_worktree(row.wt_key) and not repo:
-                        return
-                    s.menu.spin("Opening", lambda: s.open_task(row.data["identifier"], repo))
-                else:
-                    s.menu.spin("Opening", lambda: s.open_review(row.data))
-            except Exception as e:
-                s.menu.message = f"Error: {e}"
-                return
+        if s.has_session(row.wt_key):
+            s.attach(row.wt_key)
+            return
 
-        suspend()
-        s.attach(row.wt_key)
-        resume()
+        if isinstance(row.data, TaskItem):
+            task_id = row.data.id
+            repo = _pick_repo(s, task_id) if not s.has_worktree(row.wt_key) else None
+            if not s.has_worktree(row.wt_key) and not repo:
+                return
+            s.run(lambda: s.open_task(task_id, repo), "Opening", then=lambda: s.attach(row.wt_key))
+        else:
+            item = row.data
+            s.run(lambda: s.open_review(item.number, item.repo_slug, item.branch), "Opening", then=lambda: s.attach(row.wt_key))

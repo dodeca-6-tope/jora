@@ -4,7 +4,7 @@ class Action:
     aliases: tuple = ()
 
     def matches(self, key: str) -> bool:
-        return key == self.key or key in self.aliases
+        return key == self.key or key == self.label or key in self.aliases
 
     def enabled(self, s, row) -> bool:
         return True

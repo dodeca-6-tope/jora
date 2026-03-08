@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -26,7 +27,8 @@ class Git:
             dest.parent.mkdir(parents=True, exist_ok=True)
             result = subprocess.run(
                 ["git", "clone", target, str(dest)],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             if result.returncode != 0:
                 raise ValueError(f"Clone failed: {result.stderr.strip()}")
@@ -37,7 +39,8 @@ class Git:
             raise ValueError(f"Not a directory: {p}")
         check = subprocess.run(
             ["git", "rev-parse", "--git-dir"],
-            cwd=str(p), capture_output=True,
+            cwd=str(p),
+            capture_output=True,
         )
         if check.returncode != 0:
             raise ValueError(f"Not a git repo: {p}")
@@ -57,6 +60,7 @@ class Git:
             dest.unlink()
         else:
             import shutil
+
             shutil.rmtree(dest)
 
     def known_repos(self) -> List[str]:
@@ -73,6 +77,23 @@ class Git:
     def repo_path(self, repo_name: str) -> Optional[Path]:
         p = self._repos_dir / repo_name
         return p if p.exists() else None
+
+    def repo_slug(self, repo_dir: str) -> str:
+        try:
+            r = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=repo_dir,
+            )
+            url = r.stdout.strip()
+            if not url:
+                return ""
+            m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
+            return m.group(1) if m else ""
+        except subprocess.SubprocessError:
+            return ""
 
     def list_worktrees(self) -> Dict[str, Path]:
         if not self._worktrees_dir.exists():
@@ -102,7 +123,9 @@ class Git:
 
         status = subprocess.run(
             ["git", "status", "--porcelain"],
-            cwd=cwd, capture_output=True, text=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
         )
         if status.returncode != 0:
             return False
@@ -112,7 +135,9 @@ class Git:
         base = _default_branch(cwd)
         unique = subprocess.run(
             ["git", "log", "--oneline", f"origin/{base}..HEAD"],
-            cwd=cwd, capture_output=True, text=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
         )
         if unique.returncode != 0:
             return False
@@ -121,7 +146,8 @@ class Git:
 
         merged = subprocess.run(
             ["git", "merge-base", "--is-ancestor", "HEAD", f"origin/{base}"],
-            cwd=cwd, capture_output=True,
+            cwd=cwd,
+            capture_output=True,
         )
         return merged.returncode == 0
 
@@ -157,14 +183,18 @@ class Git:
             rp = self.repo_path(repo_name)
             if not rp:
                 return False
-            if wt.name.startswith("review-"):
-                return github.is_pr_merged(str(rp), wt.name.removeprefix("review-"))
             branch = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(wt), capture_output=True, text=True,
+                cwd=str(wt),
+                capture_output=True,
+                text=True,
             ).stdout.strip()
-            if branch and branch != "HEAD" and github.is_pr_merged(str(rp), branch):
-                return True
+            if branch and branch != "HEAD":
+                slug = self.repo_slug(str(rp))
+                if github.is_branch_merged(slug, branch):
+                    return True
+            if wt.name.startswith("review-"):
+                return False
             return self.is_worktree_clean(wt)
 
         with ThreadPoolExecutor(max_workers=min(len(all_wts), 8)) as pool:
@@ -192,11 +222,14 @@ class Git:
             return
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(wt), capture_output=True, text=True,
+            cwd=str(wt),
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         r = subprocess.run(
             ["git", "worktree", "remove", "--force", "--force", str(wt)],
-            cwd=str(git_dir), capture_output=True,
+            cwd=str(git_dir),
+            capture_output=True,
         )
         if r.returncode != 0:
             shutil.rmtree(wt, ignore_errors=True)
@@ -213,7 +246,7 @@ class Git:
         if parent.exists() and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
 
-    def checkout_pr(self, pr_number: int, rp: Path) -> Path:
+    def checkout_pr(self, pr_number: int, branch: str, rp: Path) -> Path:
         key = f"review-{pr_number}"
         existing = self.find_worktree(key)
         if existing:
@@ -224,18 +257,23 @@ class Git:
         wt.parent.mkdir(parents=True, exist_ok=True)
 
         subprocess.run(
-            ["git", "worktree", "add", str(wt), "--detach"],
-            capture_output=True, check=True, cwd=str(rp),
+            ["git", "fetch", "origin", f"pull/{pr_number}/head:{branch}"],
+            capture_output=True,
+            check=True,
+            cwd=str(rp),
         )
         r = subprocess.run(
-            ["gh", "pr", "checkout", str(pr_number)],
-            capture_output=True, text=True, cwd=str(wt),
+            ["git", "worktree", "add", str(wt), branch],
+            capture_output=True,
+            text=True,
+            cwd=str(rp),
         )
         if r.returncode != 0:
             import shutil
+
             shutil.rmtree(wt, ignore_errors=True)
             subprocess.run(["git", "worktree", "prune"], capture_output=True, cwd=str(rp))
-            raise RuntimeError(r.stderr.strip() or "gh pr checkout failed")
+            raise RuntimeError(r.stderr.strip() or "Failed to checkout PR branch")
         return wt
 
     def switch_to_task(self, task_key: str, rp: Path) -> Path:
@@ -249,10 +287,15 @@ class Git:
         wt.parent.mkdir(parents=True, exist_ok=True)
         cwd = str(rp)
 
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", branch],
-            capture_output=True, text=True, cwd=cwd,
-        ).returncode == 0
+        branch_exists = (
+            subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+            ).returncode
+            == 0
+        )
 
         base = _default_branch(cwd)
         subprocess.run(["git", "fetch", "origin", base], capture_output=True, check=True, cwd=cwd)
@@ -260,7 +303,12 @@ class Git:
         if branch_exists:
             subprocess.run(["git", "worktree", "add", str(wt), branch], capture_output=True, check=True, cwd=cwd)
         else:
-            subprocess.run(["git", "worktree", "add", str(wt), "-b", branch, f"origin/{base}"], capture_output=True, check=True, cwd=cwd)
+            subprocess.run(
+                ["git", "worktree", "add", str(wt), "-b", branch, f"origin/{base}"],
+                capture_output=True,
+                check=True,
+                cwd=cwd,
+            )
 
         return wt
 
@@ -272,7 +320,9 @@ def _is_git_url(s: str) -> bool:
 def _default_branch(cwd: str) -> str:
     result = subprocess.run(
         ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-        capture_output=True, text=True, cwd=cwd,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
     )
     if result.returncode == 0:
         return result.stdout.strip().removeprefix("refs/remotes/origin/")

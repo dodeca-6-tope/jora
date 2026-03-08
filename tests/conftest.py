@@ -11,7 +11,8 @@ def _cleanup_tmux():
     yield
     r = subprocess.run(
         ["tmux", "list-sessions", "-F", "#{session_name}"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     for name in r.stdout.splitlines():
         if name.startswith(TEST_TMUX_PREFIX):

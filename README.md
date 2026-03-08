@@ -8,9 +8,9 @@ Task switcher for Linear. Worktrees + tmux sessions per task, PR/CI status at a 
 curl -fsSL https://raw.githubusercontent.com/dodeca-6-tope/jora/main/setup.sh | bash
 ```
 
-Installs jora, sets up shell integration (completions + cd wrapper), and prompts for your [Linear API key](https://linear.app/settings/api).
+Installs jora and sets up shell integration (completions + cd wrapper).
 
-Requires [uv](https://docs.astral.sh/uv/) and [gh](https://cli.github.com/).
+Requires [uv](https://docs.astral.sh/uv/) and [tmux](https://github.com/tmux/tmux).
 
 ## Usage
 
@@ -25,18 +25,19 @@ Pick a task, get a worktree and a tmux session. See PR reviews, CI status, and p
 | ↑/↓     | Navigate                      |
 | enter   | Open task/review (worktree)   |
 | f       | Launch AI fix agent           |
-| x       | Kill tmux session             |
+| k       | Kill tmux session             |
 | d       | Delete worktree               |
 | c       | Clean stale worktrees         |
-| o       | Open task in Linear           |
+| l       | Open task in Linear           |
 | p       | Open PR in browser            |
 | r       | Refresh                       |
+| tab     | Switch tab                    |
 | q / esc | Quit                          |
 
 ```
 jora add <path-or-url>   # register a repo
 jora remove <name>       # unregister a repo
-jora auth                # set Linear API key + check GitHub auth
+jora auth                # set Linear API key + GitHub token
 ```
 
 Worktrees are created at `~/.jora/worktrees/<repo>/<task-key>/`.
@@ -44,5 +45,7 @@ Worktrees are created at `~/.jora/worktrees/<repo>/<task-key>/`.
 ## Dev
 
 ```bash
-uv run pytest
+uv run pytest          # tests
+uv run ruff check .    # lint
+uv run ruff format .   # format
 ```

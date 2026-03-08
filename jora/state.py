@@ -1,21 +1,46 @@
-import re
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from jora import agent
 from jora.git import Git
+from jora.github import GitHub, PullRequest, analyze_pr
+from jora.linear import Task, Tracker
 from jora.tmux import Tmux
-from jora.linear import Tracker
-from jora.github import GitHub
-from jora.term import Menu, Row, Section
-from jora.actions import Select, Open, PR, Fix, Kill, Delete, Clean, Refresh, Quit
 
 _REVIEW_MARK = {"APPROVED": "ok", "CHANGES_REQUESTED": "fail"}
 _CI_MARK = {"SUCCESS": "ok", "FAILURE": "fail"}
-_TICKET_RE = re.compile(r"[A-Z]+-\d+", re.IGNORECASE)
 
+
+def _noop(*_args, **_kwargs):
+    return None
+
+
+@dataclass
+class TaskItem:
+    id: str
+    title: str
+    url: str
+    review_status: str = ""
+    ci_status: str = ""
+    worktree: bool = False
+    session: bool = False
+
+
+@dataclass
+class ReviewItem:
+    id: str
+    number: int
+    title: str
+    url: str
+    repo_slug: str = ""
+    branch: str = ""
+    review_status: str = ""
+    ci_status: str = ""
+    worktree: bool = False
+    session: bool = False
 
 
 @dataclass
@@ -24,71 +49,105 @@ class State:
     tmux: Tmux
     linear: Tracker
     github: GitHub
-    menu: Menu
+    on_alert: Callable = _noop
+    on_attach: Callable = _noop
+    on_open_url: Callable = _noop
+    on_defer: Callable = _noop
+    on_change: Callable = _noop
 
-    def __post_init__(self):
-        self.menu.state = self
-
-    _tasks: List[Dict] = field(default_factory=list)
-    _prs_by_task: Dict[str, List[Dict]] = field(default_factory=dict)
-    _review_prs: List[Dict] = field(default_factory=list)
+    loading: int = 0
+    loading_text: str = ""
+    tasks: List[Task] = field(default_factory=list)
+    prs_by_task: Dict[str, List[PullRequest]] = field(default_factory=dict)
+    review_prs: List[PullRequest] = field(default_factory=list)
     _done: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _last_load: float = 0
 
     @property
     def done(self) -> bool:
         return self._done.is_set()
 
+    # -- Background runner ---------------------------------------------------
+
+    def run(self, fn: Callable, text: str = "", then: Callable = None):
+        """Run fn in a background thread with loading indicator."""
+        self.loading += 1
+        self.loading_text = text
+
+        def work():
+            try:
+                fn()
+            except Exception as e:
+                self.on_alert(f"Error: {e}")
+                return
+            finally:
+                self.loading -= 1
+                self.loading_text = ""
+            if then:
+                self.on_defer(then)
+
+        threading.Thread(target=work, daemon=True).start()
+
     # -- Data loading --------------------------------------------------------
 
-    def load(self):
+    def _fetch(self):
+        """Fetch all data from APIs and refresh views."""
         self._done.clear()
-        self.menu.loading = True
 
         def load_tasks():
             try:
-                self._tasks = self.linear.fetch_tasks()
+                self.tasks = self.linear.fetch_tasks()
             except Exception as e:
-                self.menu.message = f"Failed to load tasks: {e}"
-            self.refresh()
+                self.on_alert(f"Failed to load tasks: {e}")
+            self.on_change()
 
         def load_prs():
-            self._prs_by_task = self.github.fetch_task_prs(
-                [t["identifier"] for t in self._tasks],
+            prs = self.github.fetch_task_prs(
+                [t.identifier for t in self.tasks],
             )
-            self.refresh()
+            with self._lock:
+                self.prs_by_task = prs
+            self.on_change()
 
         def load_reviews():
-            slugs = [s for name in self.git.known_repos()
-                     if (rp := self.git.repo_path(name)) and (s := self.github.repo_slug(str(rp)))]
-            self._review_prs = self.github.fetch_review_prs(slugs)
-            self.refresh()
+            slugs = [
+                s
+                for name in self.git.known_repos()
+                if (rp := self.git.repo_path(name)) and (s := self.git.repo_slug(str(rp)))
+            ]
+            prs = self.github.fetch_review_prs(slugs)
+            with self._lock:
+                self.review_prs = prs
+            self.on_change()
 
-        def go():
-            threading.Thread(target=self.github.warm, daemon=True).start()
-            load_tasks()
-            t1 = threading.Thread(target=load_prs, daemon=True)
-            t2 = threading.Thread(target=load_reviews, daemon=True)
-            t1.start()
-            t2.start()
-            t1.join()
-            t2.join()
-            self._done.set()
-            self.menu.loading = False
+        threading.Thread(target=self.github.warm, daemon=True).start()
+        load_tasks()
+        t1 = threading.Thread(target=load_prs, daemon=True)
+        t2 = threading.Thread(target=load_reviews, daemon=True)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        self._done.set()
+        self._last_load = time.time()
 
-        threading.Thread(target=go, daemon=True).start()
+    def load(self):
+        self.run(self._fetch)
 
-    def refresh(self):
-        with self._lock:
-            worktrees = self.git.list_worktrees()
-            sessions = self.tmux.list_sessions()
-            self.menu.sections = self._build(worktrees, sessions)
+    _AUTO_RELOAD_INTERVAL = 10
+
+    def maybe_reload(self, force=False):
+        if not self._done.is_set():
+            return
+        if force or (self._last_load and time.time() - self._last_load >= self._AUTO_RELOAD_INTERVAL):
+            threading.Thread(target=self._fetch, daemon=True).start()
 
     # -- Queries -------------------------------------------------------------
 
     def task_pr_url(self, task_id: str) -> Optional[str]:
-        prs = self._prs_by_task.get(task_id, [])
-        return prs[0]["url"] if prs else None
+        prs = self.prs_by_task.get(task_id, [])
+        return prs[0].url if prs else None
 
     def has_session(self, wt_key: str) -> bool:
         return self.tmux.has_session(self.tmux.session_name(wt_key))
@@ -102,7 +161,62 @@ class State:
     def repos(self) -> List[str]:
         return self.git.known_repos()
 
+    def task_items(self) -> List[TaskItem]:
+        worktrees = self.git.list_worktrees()
+        sessions = self.tmux.list_sessions()
+        items = []
+        for task in self.tasks:
+            task_id = task.identifier
+            wt_key = task_id.lower()
+            pr = next(iter(self.prs_by_task.get(task_id, [])), None)
+            review_status, ci_status = "", ""
+            if pr:
+                rv, ci = analyze_pr(pr)
+                review_status = _REVIEW_MARK.get(rv, "neutral")
+                ci_status = _CI_MARK.get(ci, "neutral")
+            items.append(
+                TaskItem(
+                    id=task_id,
+                    title=task.title,
+                    url=task.url,
+                    review_status=review_status,
+                    ci_status=ci_status,
+                    worktree=wt_key in worktrees,
+                    session=self.tmux.session_name(wt_key) in sessions,
+                )
+            )
+        return items
+
+    def review_items(self) -> List[ReviewItem]:
+        worktrees = self.git.list_worktrees()
+        sessions = self.tmux.list_sessions()
+        items = []
+        for pr in self.review_prs:
+            wt_key = f"review-{pr.number}"
+            rv, ci = analyze_pr(pr)
+            items.append(
+                ReviewItem(
+                    id=wt_key,
+                    number=pr.number,
+                    title=pr.title,
+                    url=pr.url,
+                    repo_slug=pr.repo_slug,
+                    branch=pr.head_ref,
+                    review_status=_REVIEW_MARK.get(rv, "neutral"),
+                    ci_status=_CI_MARK.get(ci, "neutral"),
+                    worktree=wt_key in worktrees,
+                    session=self.tmux.session_name(wt_key) in sessions,
+                )
+            )
+        return items
+
     # -- Operations ----------------------------------------------------------
+
+    def attach(self, wt_key: str):
+        """Attach to a tmux session and refresh."""
+        name = self.tmux.session_name(wt_key)
+        self.on_attach(name)
+        self.on_change()
 
     def open_task(self, task_id: str, repo: str = None):
         """Ensure worktree + session exist for a task."""
@@ -115,31 +229,47 @@ class State:
         name = self.tmux.session_name(task_id)
         if not self.tmux.has_session(name):
             self.tmux.create_session(name, str(wt))
-        self.refresh()
+        self.on_change()
 
-    def open_review(self, pr: Dict):
+    def open_review(self, number: int, repo_slug: str, branch: str):
         """Ensure worktree + session exist for a review PR."""
-        wt_key = f"review-{pr['number']}"
+        wt_key = f"review-{number}"
         wt = self.git.find_worktree(wt_key)
         if not wt:
-            name = pr["repoSlug"].split("/")[-1]
-            rp = self.git.repo_path(name)
+            repo_name = repo_slug.split("/")[-1]
+            rp = self.git.repo_path(repo_name)
             if not rp:
-                raise ValueError(f"Repo {name} not registered")
-            wt = self.git.checkout_pr(pr["number"], rp)
+                raise ValueError(f"Repo {repo_name} not registered")
+            wt = self.git.checkout_pr(number, branch, rp)
         name = self.tmux.session_name(wt_key)
         if not self.tmux.has_session(name):
             self.tmux.create_session(name, str(wt))
-        self.refresh()
+        self.on_change()
+
+    def open_task_pr(self, task_id: str):
+        """Open the PR URL for a task."""
+        url = self.task_pr_url(task_id)
+        if url:
+            self.on_open_url(url)
+        else:
+            self.on_alert("No PR for this task")
+
+    def open_task_linear(self, task_id: str):
+        """Open the Linear issue URL for a task."""
+        task = next((t for t in self.tasks if t.identifier == task_id), None)
+        if task:
+            self.on_open_url(task.url)
+        else:
+            self.on_alert(f"Task {task_id} not found")
 
     def fix(self, task_id: str, repo: str = None):
         """Ensure worktree, create session, launch AI agent."""
         if self.has_session(task_id):
-            self.menu.message = "Session already running — use ⏎ to attach"
+            self.on_alert("Session already running — use ⏎ to attach")
             return
         wt = self.git.find_worktree(task_id)
         if wt and not self.git.is_worktree_clean(wt):
-            self.menu.message = "Worktree has changes — use ⏎ to attach"
+            self.on_alert("Worktree has changes — use ⏎ to attach")
             return
         if not wt:
             rp = self.git.repo_path(repo)
@@ -149,108 +279,38 @@ class State:
         name = self.tmux.session_name(task_id)
         self.tmux.create_session(name, str(wt))
         self.tmux.send_keys(name, agent.command(task_id))
-        self.refresh()
+        self.on_change()
 
     def kill_session(self, wt_key: str):
         """Kill a tmux session."""
         name = self.tmux.session_name(wt_key)
         if not self.tmux.has_session(name):
-            self.menu.message = "No session"
+            self.on_alert("No session")
             return
         self.tmux.kill_session(name)
-        self.menu.message = f"Killed session for {wt_key}"
-        self.refresh()
+        self.on_alert(f"Killed session for {wt_key}")
+        self.on_change()
 
     def delete_worktree(self, wt_key: str):
         """Kill session if running, remove worktree."""
         if not self.git.find_worktree(wt_key):
-            self.menu.message = f"No worktree for {wt_key}"
+            self.on_alert(f"No worktree for {wt_key}")
             return
         name = self.tmux.session_name(wt_key)
         if self.tmux.has_session(name):
             self.tmux.kill_session(name)
         self.git.remove_worktree(wt_key)
-        self.menu.message = f"Removed worktree for {wt_key}"
-        self.refresh()
-
-    def attach(self, wt_key: str):
-        """Attach to a tmux session."""
-        self.tmux.attach_session(self.tmux.session_name(wt_key))
-        self.refresh()
+        self.on_alert(f"Removed worktree for {wt_key}")
+        self.on_change()
 
     def clean(self):
         """Remove stale worktrees and their sessions."""
-        self.menu.loading = True
         removed = self.git.clean_worktrees(self.github)
         for key in removed:
             name = self.tmux.session_name(key)
             if self.tmux.has_session(name):
                 self.tmux.kill_session(name)
         n = len(removed)
-        self.menu.message = f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean"
-        self.menu.loading = False
+        self.on_alert(f"Removed {n} worktree{'s' if n != 1 else ''}" if n else "Nothing to clean")
         if n:
-            self.refresh()
-
-    # -- View building -------------------------------------------------------
-
-    def _pr_marks(self, pr):
-        if not pr:
-            return ()
-        rv, ci = self.github.analyze_pr(pr)
-        return (
-            _REVIEW_MARK.get(rv, "neutral"),
-            _CI_MARK.get(ci, "neutral"),
-        )
-
-    def _make_row(self, key, title, pr, wt_key, data, worktrees, sessions, actions):
-        return Row(
-            key=key,
-            title=title,
-            wt_key=wt_key,
-            marks=self._pr_marks(pr),
-            worktree=wt_key in worktrees,
-            session=self.tmux.session_name(wt_key) in sessions,
-            data=data,
-            actions=actions,
-        )
-
-    def _pr_ticket(self, pr):
-        for f in ("title", "headRefName"):
-            m = _TICKET_RE.search(pr.get(f, ""))
-            if m:
-                return m.group(0).upper()
-        return None
-
-    def _build(self, worktrees, sessions):
-        sections = []
-        tasks_by_id = {t["identifier"]: t for t in self._tasks}
-
-        task_rows = []
-        for task in self._tasks:
-            pr = next(iter(self._prs_by_task.get(task["identifier"], [])), None)
-            task_id = task["identifier"]
-            task_rows.append(self._make_row(
-                task_id[:9], task.get("title", "No title"), pr,
-                task_id.lower(), task, worktrees, sessions,
-                [Select(), Fix(), Kill(), Open(), PR(), Refresh(), Clean(), Quit()],
-            ))
-        sections.append(Section(f"Tasks — {len(task_rows)}", task_rows, "No tasks"))
-
-        review_rows = []
-        for pr in self._review_prs:
-            ticket = self._pr_ticket(pr)
-            if not ticket:
-                continue
-            task = tasks_by_id.get(ticket)
-            if not task:
-                continue
-            review_rows.append(self._make_row(
-                ticket[:9], task["title"], pr,
-                f"review-{pr['number']}", pr, worktrees, sessions,
-                [Select(), Kill(), Delete(), PR(), Refresh(), Clean(), Quit()],
-            ))
-        if self._review_prs:
-            sections.append(Section(f"Review — {len(review_rows)}", review_rows, "Nothing to review"))
-
-        return sections
+            self.on_change()
