@@ -211,9 +211,10 @@ class State:
 
     # -- Operations ----------------------------------------------------------
 
-    def _ensure_session(self, wt_key: str, wt: Path):
+    def _ensure_session(self, wt_key: str):
         name = self.tmux.session_name(wt_key)
         if not self.tmux.has_session(name):
+            wt = self.git.find_worktree(wt_key)
             self.tmux.create_session(name, str(wt))
 
     def attach(self, wt_key: str):
@@ -230,7 +231,7 @@ class State:
             if not rp:
                 raise ValueError(f"Repo {repo} not registered")
             wt = self.git.switch_to_task(task_id, rp)
-        self._ensure_session(task_id, wt)
+        self._ensure_session(task_id)
         self.on_change()
 
     def open_review(self, number: int, repo_slug: str, branch: str):
@@ -243,7 +244,7 @@ class State:
             if not rp:
                 raise ValueError(f"Repo {repo_name} not registered")
             wt = self.git.checkout_pr(number, branch, rp)
-        self._ensure_session(wt_key, wt)
+        self._ensure_session(wt_key)
         self.on_change()
 
     def open_task_pr(self, task_id: str):
