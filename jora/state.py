@@ -271,11 +271,9 @@ class State:
         if wt and self.has_session(wt):
             self.on_alert("Session already running — use ⏎ to attach")
             return
-        if wt:
-            path = self.git.find_worktree(wt)
-            if not self.git.is_worktree_clean(path):
-                self.on_alert("Worktree has changes — use ⏎ to attach")
-                return
+        if wt and not self.git.is_worktree_clean(wt):
+            self.on_alert("Worktree has changes — use ⏎ to attach")
+            return
         wt = self.open_task(task_id, repo)
         name = self._session_name(wt)
         self.tmux.send_keys(name, agent.command(f"Fix task {task_id}"))

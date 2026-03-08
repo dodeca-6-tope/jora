@@ -132,8 +132,8 @@ class Git:
                 return Worktree(repo_dir.name, wt.name)
         return None
 
-    def is_worktree_clean(self, wt: Path) -> bool:
-        cwd = str(wt)
+    def is_worktree_clean(self, wt: Worktree) -> bool:
+        cwd = str(self.find_worktree(wt))
 
         status = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -175,9 +175,9 @@ class Git:
         for repo_dir in self._worktrees_dir.iterdir():
             if not repo_dir.is_dir():
                 continue
-            for wt in repo_dir.iterdir():
-                if wt.is_dir():
-                    all_wts.append((repo_dir.name, wt))
+            for path in repo_dir.iterdir():
+                if path.is_dir():
+                    all_wts.append(Worktree(repo_dir.name, path.name))
 
         if not all_wts:
             return []
@@ -188,18 +188,18 @@ class Git:
                 base = _default_branch(str(rp))
                 subprocess.run(["git", "fetch", "origin", base], cwd=str(rp), capture_output=True)
 
-        repo_names = {name for name, _ in all_wts}
+        repo_names = {wt.repo for wt in all_wts}
         with ThreadPoolExecutor(max_workers=min(len(repo_names), 8)) as pool:
             list(pool.map(fetch_repo, repo_names))
 
-        def should_clean(pair):
-            repo_name, wt = pair
-            rp = self.repo_path(repo_name)
+        def should_clean(wt):
+            rp = self.repo_path(wt.repo)
             if not rp:
                 return False
+            path = self.find_worktree(wt)
             branch = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(wt),
+                cwd=str(path),
                 capture_output=True,
                 text=True,
             ).stdout.strip()
@@ -207,7 +207,7 @@ class Git:
                 slug = self.repo_slug(str(rp))
                 if github.is_branch_merged(slug, branch):
                     return True
-            if wt.name.startswith("review-"):
+            if wt.key.startswith("review-"):
                 return False
             return self.is_worktree_clean(wt)
 
@@ -215,11 +215,10 @@ class Git:
             results = list(pool.map(should_clean, all_wts))
 
         removed = []
-        for (repo_name, wt), clean in zip(all_wts, results):
-            if not clean:
-                continue
-            removed.append(Worktree(repo_name, wt.name))
-            self._remove_wt(repo_name, wt)
+        for wt, clean in zip(all_wts, results):
+            if clean:
+                removed.append(wt)
+                self._remove_wt(wt)
 
         for repo_dir in self._worktrees_dir.iterdir():
             if repo_dir.is_dir() and not any(repo_dir.iterdir()):
@@ -227,36 +226,37 @@ class Git:
 
         return removed
 
-    def _remove_wt(self, repo_name: str, wt: Path):
+    def _remove_wt(self, wt: Worktree):
         import shutil
 
-        git_dir = self.repo_path(repo_name)
+        path = self.find_worktree(wt)
+        git_dir = self.repo_path(wt.repo)
         if not git_dir:
-            shutil.rmtree(wt, ignore_errors=True)
+            if path:
+                shutil.rmtree(path, ignore_errors=True)
             return
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(wt),
+            cwd=str(path),
             capture_output=True,
             text=True,
         ).stdout.strip()
         r = subprocess.run(
-            ["git", "worktree", "remove", "--force", "--force", str(wt)],
+            ["git", "worktree", "remove", "--force", "--force", str(path)],
             cwd=str(git_dir),
             capture_output=True,
         )
         if r.returncode != 0:
-            shutil.rmtree(wt, ignore_errors=True)
+            shutil.rmtree(path, ignore_errors=True)
             subprocess.run(["git", "worktree", "prune"], cwd=str(git_dir), capture_output=True)
         if branch and branch != "HEAD":
             subprocess.run(["git", "branch", "-D", branch], cwd=str(git_dir), capture_output=True)
 
     def remove_worktree(self, wt: Worktree):
-        path = self.find_worktree(wt)
-        if not path:
+        if not self.find_worktree(wt):
             raise ValueError(f"No worktree for {wt.repo}/{wt.key}")
-        self._remove_wt(wt.repo, path)
-        parent = path.parent
+        self._remove_wt(wt)
+        parent = self._worktrees_dir / wt.repo
         if parent.exists() and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
 
