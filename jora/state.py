@@ -1,7 +1,6 @@
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from jora import agent
@@ -150,12 +149,6 @@ class State:
 
     def has_session(self, wt: Worktree) -> bool:
         return self.tmux.has_session(self._session_name(wt))
-
-    def has_worktree(self, wt: Worktree) -> bool:
-        return self.git.find_worktree(wt) is not None
-
-    def worktree_path(self, wt: Worktree) -> Optional[Path]:
-        return self.git.find_worktree(wt)
 
     def repos(self) -> List[str]:
         return self.git.known_repos()

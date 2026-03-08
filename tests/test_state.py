@@ -455,7 +455,7 @@ def test_open_task_creates_worktree_and_session(tmp_path):
 
     wt = s.open_task("proj-1", "myrepo")
 
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert s.has_session(wt)
     assert app.sections[0].rows[0].worktree is True
     assert app.sections[0].rows[0].session is True
@@ -514,7 +514,7 @@ def test_select_task_picks_repo_and_opens(tmp_path):
         dispatch("enter", row, s)
         _wait_loading(s)
 
-    assert s.has_worktree(Worktree("myrepo", "proj-1"))
+    assert s.git.find_worktree(Worktree("myrepo", "proj-1"))
     assert s.has_session(Worktree("myrepo", "proj-1"))
 
 
@@ -526,7 +526,7 @@ def test_select_task_cancelled_repo_pick(tmp_path):
     with patch("jora.app.pick", return_value=None):
         dispatch("enter", row, s)
 
-    assert not s.has_worktree(Worktree("myrepo", "proj-1"))
+    assert not s.git.find_worktree(Worktree("myrepo", "proj-1"))
 
 
 def test_select_task_with_worktree_skips_picker(tmp_path):
@@ -621,7 +621,7 @@ def test_fix_creates_worktree_and_session(tmp_path):
     s.fix("proj-1", "myrepo")
 
     wt = Worktree("myrepo", "proj-1")
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert s.has_session(wt)
 
 
@@ -642,7 +642,7 @@ def test_fix_blocks_when_worktree_dirty(tmp_path):
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
 
-    path = s.worktree_path(wt)
+    path = s.git.find_worktree(wt)
     (path / "dirty.txt").write_text("dirty")
 
     s.fix("proj-1")
@@ -660,7 +660,7 @@ def test_fix_action_picks_repo(tmp_path):
         _wait_loading(s)
 
     wt = Worktree("myrepo", "proj-1")
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert s.has_session(wt)
 
 
@@ -686,7 +686,7 @@ def test_fix_action_cancelled_repo_pick(tmp_path):
     with patch("jora.app.pick", return_value=None):
         dispatch("fix", row, s)
 
-    assert not s.has_worktree(Worktree("myrepo", "proj-1"))
+    assert not s.git.find_worktree(Worktree("myrepo", "proj-1"))
 
 
 # -- kill_session() ----------------------------------------------------------
@@ -719,11 +719,11 @@ def test_delete_worktree_removes_worktree_and_session(tmp_path):
     s, alerts, _ = _loaded_state(tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}])
 
     wt = s.open_task("proj-1", "myrepo")
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert s.has_session(wt)
 
     s.delete_worktree(wt)
-    assert not s.has_worktree(wt)
+    assert not s.git.find_worktree(wt)
     assert not s.has_session(wt)
     assert "Removed" in " ".join(alerts)
 
@@ -734,11 +734,11 @@ def test_delete_worktree_without_session(tmp_path):
 
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert not s.has_session(wt)
 
     s.delete_worktree(wt)
-    assert not s.has_worktree(wt)
+    assert not s.git.find_worktree(wt)
     assert "Removed" in " ".join(alerts)
 
 
@@ -760,7 +760,7 @@ def test_clean_removes_stale_worktrees(tmp_path):
     s.kill_session(wt)
 
     s.clean()
-    assert not s.has_worktree(wt)
+    assert not s.git.find_worktree(wt)
     assert "Removed" in " ".join(alerts)
 
 
@@ -780,13 +780,13 @@ def test_clean_removes_merged_pr_worktree(tmp_path):
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
 
-    path = s.worktree_path(wt)
+    path = s.git.find_worktree(wt)
     (path / "change.txt").write_text("x")
     _run(["git", "add", "."], cwd=str(path))
     _run(["git", "commit", "-m", "local work"], cwd=str(path))
 
     s.clean()
-    assert not s.has_worktree(wt)
+    assert not s.git.find_worktree(wt)
     assert "Removed" in " ".join(alerts)
 
 
@@ -797,13 +797,13 @@ def test_clean_keeps_dirty_unmerged_worktree(tmp_path):
     wt = s.open_task("proj-1", "myrepo")
     s.kill_session(wt)
 
-    path = s.worktree_path(wt)
+    path = s.git.find_worktree(wt)
     (path / "change.txt").write_text("x")
     _run(["git", "add", "."], cwd=str(path))
     _run(["git", "commit", "-m", "local work"], cwd=str(path))
 
     s.clean()
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert "Nothing to clean" in " ".join(alerts)
 
 
@@ -825,7 +825,7 @@ def test_queries(tmp_path):
 
     wt = s.open_task("proj-1", "myrepo")
 
-    assert s.has_worktree(wt)
+    assert s.git.find_worktree(wt)
     assert s.has_session(wt)
 
 
