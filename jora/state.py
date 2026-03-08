@@ -10,9 +10,6 @@ from jora.github import GitHub, PullRequest, analyze_pr
 from jora.linear import Task, Tracker
 from jora.tmux import Tmux
 
-_REVIEW_MARK = {"APPROVED": "ok", "CHANGES_REQUESTED": "fail"}
-_CI_MARK = {"SUCCESS": "ok", "FAILURE": "fail"}
-
 
 def _noop(*_args, **_kwargs):
     return None
@@ -161,6 +158,12 @@ class State:
     def repos(self) -> List[str]:
         return self.git.known_repos()
 
+    def _pr_marks(self, pr: PullRequest):
+        rv, ci = analyze_pr(pr)
+        review = {"APPROVED": "ok", "CHANGES_REQUESTED": "fail"}.get(rv, "neutral")
+        checks = {"SUCCESS": "ok", "FAILURE": "fail"}.get(ci, "neutral")
+        return review, checks
+
     def task_items(self) -> List[TaskItem]:
         worktrees = self.git.list_worktrees()
         sessions = self.tmux.list_sessions()
@@ -169,11 +172,7 @@ class State:
             task_id = task.identifier
             wt_key = task_id.lower()
             pr = next(iter(self.prs_by_task.get(task_id, [])), None)
-            review_status, ci_status = "", ""
-            if pr:
-                rv, ci = analyze_pr(pr)
-                review_status = _REVIEW_MARK.get(rv, "neutral")
-                ci_status = _CI_MARK.get(ci, "neutral")
+            review_status, ci_status = self._pr_marks(pr) if pr else ("", "")
             items.append(
                 TaskItem(
                     id=task_id,
@@ -193,7 +192,7 @@ class State:
         items = []
         for pr in self.review_prs:
             wt_key = f"review-{pr.number}"
-            rv, ci = analyze_pr(pr)
+            review_status, ci_status = self._pr_marks(pr)
             items.append(
                 ReviewItem(
                     id=wt_key,
@@ -202,8 +201,8 @@ class State:
                     url=pr.url,
                     repo_slug=pr.repo_slug,
                     branch=pr.head_ref,
-                    review_status=_REVIEW_MARK.get(rv, "neutral"),
-                    ci_status=_CI_MARK.get(ci, "neutral"),
+                    review_status=review_status,
+                    ci_status=ci_status,
                     worktree=wt_key in worktrees,
                     session=self.tmux.session_name(wt_key) in sessions,
                 )
@@ -212,8 +211,13 @@ class State:
 
     # -- Operations ----------------------------------------------------------
 
+    def _ensure_session(self, wt_key: str, wt: Path):
+        name = self.tmux.session_name(wt_key)
+        if not self.tmux.has_session(name):
+            self.tmux.create_session(name, str(wt))
+
     def attach(self, wt_key: str):
-        """Attach to a tmux session and refresh."""
+        """Attach to a tmux session."""
         name = self.tmux.session_name(wt_key)
         self.on_attach(name)
         self.on_change()
@@ -226,9 +230,7 @@ class State:
             if not rp:
                 raise ValueError(f"Repo {repo} not registered")
             wt = self.git.switch_to_task(task_id, rp)
-        name = self.tmux.session_name(task_id)
-        if not self.tmux.has_session(name):
-            self.tmux.create_session(name, str(wt))
+        self._ensure_session(task_id, wt)
         self.on_change()
 
     def open_review(self, number: int, repo_slug: str, branch: str):
@@ -241,9 +243,7 @@ class State:
             if not rp:
                 raise ValueError(f"Repo {repo_name} not registered")
             wt = self.git.checkout_pr(number, branch, rp)
-        name = self.tmux.session_name(wt_key)
-        if not self.tmux.has_session(name):
-            self.tmux.create_session(name, str(wt))
+        self._ensure_session(wt_key, wt)
         self.on_change()
 
     def open_task_pr(self, task_id: str):
@@ -271,15 +271,9 @@ class State:
         if wt and not self.git.is_worktree_clean(wt):
             self.on_alert("Worktree has changes — use ⏎ to attach")
             return
-        if not wt:
-            rp = self.git.repo_path(repo)
-            if not rp:
-                raise ValueError(f"Repo {repo} not registered")
-            wt = self.git.switch_to_task(task_id, rp)
+        self.open_task(task_id, repo)
         name = self.tmux.session_name(task_id)
-        self.tmux.create_session(name, str(wt))
         self.tmux.send_keys(name, agent.command(f"Fix task {task_id}"))
-        self.on_change()
 
     def kill_session(self, wt_key: str):
         """Kill a tmux session."""
