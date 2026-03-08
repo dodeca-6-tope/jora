@@ -45,11 +45,12 @@ _GLOBAL_ACTIONS = [Refresh(), Clean(), Quit()]
 
 
 def actions_for(row):
+    """Return all actions available for a row (global + row-specific)."""
     return _GLOBAL_ACTIONS + (row.actions if row else [])
 
 
 def dispatch(key, row, state):
-    """Dispatch key to matching action. Returns 'exit' to quit."""
+    """Match a keypress to an action and run it. Returns 'exit' to quit."""
     if not key:
         return
     for action in actions_for(row):
@@ -89,6 +90,7 @@ _MARK = {
 
 
 def _enter_raw():
+    """Switch to raw mode, re-enable output processing for \n → \r\n."""
     tty.setraw(_fd)
     attrs = termios.tcgetattr(_fd)
     attrs[1] |= termios.OPOST
@@ -96,11 +98,13 @@ def _enter_raw():
 
 
 def _restore_terminal():
+    """Restore saved terminal attributes."""
     if _saved:
         termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
 
 
 def _init():
+    """Enter alt screen, hide cursor, enable focus events."""
     global _saved, _active, _fd
     _fd = sys.stdin.fileno()
     _saved = termios.tcgetattr(_fd)
@@ -112,6 +116,7 @@ def _init():
 
 
 def _cleanup():
+    """Leave alt screen, show cursor, restore terminal."""
     global _active
     if not _active:
         return
@@ -139,12 +144,12 @@ def resume():
 
 
 def _readkey() -> Optional[str]:
+    """Read a single keypress. Returns None on timeout (1/60s)."""
     ready, _, _ = select.select([_fd], [], [], 1 / 60)
     if not ready:
         return None
     ch = os.read(_fd, 1)
     if ch == b"\x1b":
-        # Wait briefly for escape sequence bytes; bare ESC returns immediately
         if select.select([_fd], [], [], 0.02)[0]:
             seq = os.read(_fd, 16)
             if seq[:2] == b"[A":
@@ -171,6 +176,7 @@ def _readkey() -> Optional[str]:
 
 
 def _format_row(row: Row, selected: bool) -> str:
+    """Format a single row line. ◆ = session active, ◇ = worktree exists."""
     wt = "◆" if row.session else ("◇" if row.worktree else f"{_FAINT}◇{_RESET}")
     title = row.title
     avail = os.get_terminal_size().columns - _PREFIX
@@ -182,6 +188,7 @@ def _format_row(row: Row, selected: bool) -> str:
 
 
 def _render(lines: list[str]):
+    """Write full screen contents with synchronized update to avoid flicker."""
     buf = "\033[?2026h\033[H"
     for line in lines:
         buf += line + "\033[K\n"
@@ -194,6 +201,7 @@ def _render(lines: list[str]):
 
 
 def _item_to_row(item, actions):
+    """Convert a TaskItem or ReviewItem to a display Row."""
     marks = ()
     if item.review_status:
         marks = (item.review_status, item.ci_status)
@@ -210,6 +218,7 @@ def _item_to_row(item, actions):
 
 
 def _rebuild_tab(tab, items):
+    """Rebuild a tab's sections from enriched items."""
     rows = [_item_to_row(item, tab.actions) for item in items]
     tab.sections = [Section(rows=rows, subtitle=tab.subtitle)]
 
@@ -258,9 +267,11 @@ class App:
         _rebuild_tab(self._tabs[1], self.state.review_items())
 
     def next_tab(self):
+        """Switch to the next tab."""
         self._tab_idx = (self._tab_idx + 1) % len(self._tabs)
 
     def alert(self, text: str):
+        """Add a notification message."""
         self._notifications.add(text)
 
     def __enter__(self):
@@ -275,6 +286,7 @@ class App:
         return sum(len(sec.rows) for sec in self.sections)
 
     def _at(self, idx: int) -> Tuple[Optional[Section], Optional[Row]]:
+        """Return the section and row at a flat index across all sections."""
         i = idx
         for sec in self.sections:
             if i < len(sec.rows):
@@ -283,6 +295,7 @@ class App:
         return None, None
 
     def _index_of_key(self, key: str) -> Optional[int]:
+        """Find the flat index of a row by its key."""
         idx = 0
         for sec in self.sections:
             for row in sec.rows:
@@ -292,7 +305,7 @@ class App:
         return None
 
     def stabilize_cursor(self):
-        """Restore cursor to the previously selected row by key, or clamp."""
+        """Keep cursor on the same row by key after data changes, or clamp."""
         total = self._total_rows
         if not total:
             return
@@ -305,7 +318,7 @@ class App:
         self.tab.cursor = max(0, min(self.tab.cursor, total - 1))
 
     def tick(self) -> Tuple[Optional[str], Optional[Row]]:
-        """Draw, read one key, return (key, row) or (None, None) on no input."""
+        """Draw, read one key, return (key, row) or (None, None) on timeout."""
         total = self._total_rows
         self.stabilize_cursor()
 
@@ -329,15 +342,14 @@ class App:
         return key, row
 
     def _draw(self):
+        """Render the full screen: header, rows, help bar, notifications."""
         loading = self.state.loading if self.state else False
         spinner_ch = _SPINNER[self._spin // 3 % len(_SPINNER)] if loading else " "
 
-        # Full-screen spinner for operations with text
         if loading and self.state.loading_text:
             _render([f"{self.state.loading_text} {spinner_ch}"])
             return
 
-        # Header: title + spinner slot + tab bar
         tab_bar = ""
         if self._tabs:
             parts = []
@@ -347,10 +359,8 @@ class App:
                 else:
                     parts.append(tab.name)
             tab_bar = " · ".join(parts)
-        # Extra space keeps spinner visually separate from tabs
         lines = [f"{_BOLD}Jora{_RESET} {spinner_ch}  {tab_bar}", ""]
 
-        # Sections and rows
         flat_idx = 0
         for i, sec in enumerate(self.sections):
             if i > 0:
@@ -361,7 +371,6 @@ class App:
                 lines.append(_format_row(row, flat_idx == self.tab.cursor))
                 flat_idx += 1
 
-        # Help bar
         _, cur_row = self._at(self.tab.cursor)
         if self.state:
             parts = []
@@ -381,9 +390,7 @@ class App:
 
 
 def pick(title: str, items: List[str]) -> Optional[int]:
-    """Minimal picker. Returns selected index or None if cancelled.
-    Works both standalone and inside an active App.
-    """
+    """Show a picker UI. Returns selected index or None if cancelled."""
     owned = not _active
     if owned:
         _init()
@@ -395,6 +402,7 @@ def pick(title: str, items: List[str]) -> Optional[int]:
 
 
 def _pick_loop(title: str, items: List[str]) -> Optional[int]:
+    """Picker input loop."""
     cursor = 0
     while True:
         lines = [f"{_BOLD}{title}{_RESET}", ""]
