@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List
 
 import requests
 
@@ -22,7 +21,7 @@ class Tracker(ABC):
         """Return the authenticated user's display name."""
 
     @abstractmethod
-    def fetch_tasks(self) -> List[Task]:
+    def fetch_tasks(self) -> list[Task]:
         """Return active tasks assigned to the current user."""
 
 
@@ -30,7 +29,7 @@ class LinearClient(Tracker):
     def __init__(self, api_key: str):
         self.api_key = api_key
 
-    def _graphql(self, query: str) -> Dict:
+    def _graphql(self, query: str) -> dict:
         headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
         resp = requests.post(LINEAR_API_URL, headers=headers, json={"query": query}, timeout=30)
         resp.raise_for_status()
@@ -44,7 +43,7 @@ class LinearClient(Tracker):
         result = self._graphql("{ viewer { name } }")
         return result.get("viewer", {}).get("name", "Unknown")
 
-    def fetch_tasks(self) -> List[Task]:
+    def fetch_tasks(self) -> list[Task]:
         query = """
         {
             viewer {

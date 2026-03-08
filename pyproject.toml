@@ -21,7 +21,7 @@ build-backend = "hatchling.build"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "I", "W", "UP", "C4", "SIM", "RET", "PTH"]
 ignore = ["E501", "E701", "E741"]
 
 [tool.ruff.lint.per-file-ignores]

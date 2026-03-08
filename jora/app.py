@@ -7,7 +7,6 @@ import sys
 import termios
 import tty
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
 
 from jora.actions.clean import Clean
 from jora.actions.delete import Delete
@@ -26,7 +25,7 @@ from jora.notifications import Notifications
 class Row:
     key: str
     title: str
-    marks: Tuple[str, ...] = ()
+    marks: tuple[str, ...] = ()
     worktree: bool = False
     session: bool = False
     data: object = None
@@ -35,7 +34,7 @@ class Row:
 
 @dataclass
 class Section:
-    rows: List[Row] = field(default_factory=list)
+    rows: list[Row] = field(default_factory=list)
     subtitle: str = ""
 
 _TASK_ACTIONS = [Select(), Fix(), Kill(), Open(), PR()]
@@ -52,14 +51,15 @@ def actions_for(row):
 def dispatch(key, row, state):
     """Match a keypress to an action and run it. Returns 'exit' to quit."""
     if not key:
-        return
+        return None
     for action in actions_for(row):
         if action.matches(key) and action.enabled(state, row):
             try:
                 return action.run(state, row)
             except Exception as e:
                 state.on_alert(f"Error: {e}")
-                return
+                return None
+    return None
 
 _saved = None
 _active = False
@@ -143,7 +143,7 @@ def resume():
 # -- Input -------------------------------------------------------------------
 
 
-def _readkey() -> Optional[str]:
+def _readkey() -> str | None:
     """Read a single keypress. Returns None on timeout (1/60s)."""
     ready, _, _ = select.select([_fd], [], [], 1 / 60)
     if not ready:
@@ -228,7 +228,7 @@ class Tab:
     name: str
     actions: list
     subtitle: str
-    sections: List[Section] = field(default_factory=list)
+    sections: list[Section] = field(default_factory=list)
     cursor: int = 0
 
 
@@ -236,7 +236,7 @@ class Tab:
 class App:
     state: object = None
     _notifications: Notifications = field(default_factory=Notifications)
-    _tabs: List[Tab] = field(default_factory=lambda: [
+    _tabs: list[Tab] = field(default_factory=lambda: [
         Tab("Tasks", _TASK_ACTIONS, "No tasks"),
         Tab("Reviews", _REVIEW_ACTIONS, "Nothing to review"),
     ])
@@ -285,7 +285,7 @@ class App:
     def _total_rows(self) -> int:
         return sum(len(sec.rows) for sec in self.sections)
 
-    def _at(self, idx: int) -> Tuple[Optional[Section], Optional[Row]]:
+    def _at(self, idx: int) -> tuple[Section | None, Row | None]:
         """Return the section and row at a flat index across all sections."""
         i = idx
         for sec in self.sections:
@@ -294,7 +294,7 @@ class App:
             i -= len(sec.rows)
         return None, None
 
-    def _index_of_key(self, key: str) -> Optional[int]:
+    def _index_of_key(self, key: str) -> int | None:
         """Find the flat index of a row by its key."""
         idx = 0
         for sec in self.sections:
@@ -317,7 +317,7 @@ class App:
                 return
         self.tab.cursor = max(0, min(self.tab.cursor, total - 1))
 
-    def tick(self) -> Tuple[Optional[str], Optional[Row]]:
+    def tick(self) -> tuple[str | None, Row | None]:
         """Draw, read one key, return (key, row) or (None, None) on timeout."""
         total = self._total_rows
         self.stabilize_cursor()
@@ -389,7 +389,7 @@ class App:
         _render(lines)
 
 
-def pick(title: str, items: List[str]) -> Optional[int]:
+def pick(title: str, items: list[str]) -> int | None:
     """Show a picker UI. Returns selected index or None if cancelled."""
     owned = not _active
     if owned:
@@ -401,7 +401,7 @@ def pick(title: str, items: List[str]) -> Optional[int]:
             _cleanup()
 
 
-def _pick_loop(title: str, items: List[str]) -> Optional[int]:
+def _pick_loop(title: str, items: list[str]) -> int | None:
     """Picker input loop."""
     cursor = 0
     while True:

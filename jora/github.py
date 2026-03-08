@@ -1,7 +1,7 @@
+import contextlib
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 import requests
 
@@ -30,8 +30,8 @@ class PullRequest:
     head_ref: str
     author_login: str
     repo_slug: str
-    reviews: List[PullRequestReview] = field(default_factory=list)
-    checks: List[CheckStatus] = field(default_factory=list)
+    reviews: list[PullRequestReview] = field(default_factory=list)
+    checks: list[CheckStatus] = field(default_factory=list)
 
 
 _PR_FIELDS = """
@@ -63,27 +63,21 @@ _PR_FIELDS = """
   }
 """
 
-_AUTHORED_QUERY = (
-    """
-{
-  search(query: "is:pr is:open author:@me", type: ISSUE, first: 100) {
-    nodes { %s }
-  }
-}
+_AUTHORED_QUERY = f"""
+{{
+  search(query: "is:pr is:open author:@me", type: ISSUE, first: 100) {{
+    nodes {{ {_PR_FIELDS} }}
+  }}
+}}
 """
-    % _PR_FIELDS
-)
 
-_REVIEW_QUERY = (
-    """
-query($q: String!) {
-  search(query: $q, type: ISSUE, first: 100) {
-    nodes { %s }
-  }
-}
+_REVIEW_QUERY = f"""
+query($q: String!) {{
+  search(query: $q, type: ISSUE, first: 100) {{
+    nodes {{ {_PR_FIELDS} }}
+  }}
+}}
 """
-    % _PR_FIELDS
-)
 
 
 # -- Analysis ---------------------------------------------------------------
@@ -94,7 +88,7 @@ def analyze_pr(pr: PullRequest) -> tuple:
     return (_review_status(pr.reviews), _ci_status(pr.checks))
 
 
-def _ci_status(checks: List[CheckStatus]) -> str:
+def _ci_status(checks: list[CheckStatus]) -> str:
     if not checks:
         return "NONE"
     if all(c.conclusion == "SUCCESS" for c in checks):
@@ -104,7 +98,7 @@ def _ci_status(checks: List[CheckStatus]) -> str:
     return "PENDING"
 
 
-def _review_status(reviews: List[PullRequestReview]) -> str:
+def _review_status(reviews: list[PullRequestReview]) -> str:
     if not reviews:
         return "NO_REVIEWS"
     latest_by_reviewer = {}
@@ -129,7 +123,7 @@ def _latest_review_by(pr: PullRequest, login: str) -> str:
 # -- Normalization ----------------------------------------------------------
 
 
-def _match_prs_to_tasks(task_keys: List[str], all_prs: List[PullRequest]) -> Dict[str, List[PullRequest]]:
+def _match_prs_to_tasks(task_keys: list[str], all_prs: list[PullRequest]) -> dict[str, list[PullRequest]]:
     result = {}
     for key in task_keys:
         pattern = re.compile(re.escape(key) + r"(?!\w)", re.IGNORECASE)
@@ -146,7 +140,7 @@ def _match_prs_to_tasks(task_keys: List[str], all_prs: List[PullRequest]) -> Dic
     return result
 
 
-def _parse_pr(node: Dict) -> PullRequest:
+def _parse_pr(node: dict) -> PullRequest:
     reviews = [
         PullRequestReview(
             state=r["state"],
@@ -188,10 +182,10 @@ class GitHub(ABC):
     def warm(self): ...
 
     @abstractmethod
-    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[PullRequest]]: ...
+    def fetch_task_prs(self, task_keys: list[str]) -> dict[str, list[PullRequest]]: ...
 
     @abstractmethod
-    def fetch_review_prs(self, repo_slugs: List[str]) -> List[PullRequest]: ...
+    def fetch_review_prs(self, repo_slugs: list[str]) -> list[PullRequest]: ...
 
     @abstractmethod
     def is_branch_merged(self, slug: str, branch: str) -> bool: ...
@@ -216,12 +210,10 @@ class GitHubClient(GitHub):
         return self._login
 
     def warm(self):
-        try:
+        with contextlib.suppress(Exception):
             self.whoami()
-        except Exception:
-            pass
 
-    def fetch_task_prs(self, task_keys: List[str]) -> Dict[str, List[PullRequest]]:
+    def fetch_task_prs(self, task_keys: list[str]) -> dict[str, list[PullRequest]]:
         try:
             r = self._graphql(_AUTHORED_QUERY)
             nodes = r.get("data", {}).get("search", {}).get("nodes", [])
@@ -230,7 +222,7 @@ class GitHubClient(GitHub):
             all_prs = []
         return _match_prs_to_tasks(task_keys, all_prs)
 
-    def fetch_review_prs(self, repo_slugs: List[str]) -> List[PullRequest]:
+    def fetch_review_prs(self, repo_slugs: list[str]) -> list[PullRequest]:
         if not repo_slugs:
             return []
         from concurrent.futures import ThreadPoolExecutor
@@ -283,7 +275,7 @@ class GitHubClient(GitHub):
         except (requests.RequestException, KeyError):
             return False
 
-    def _graphql(self, query: str, **variables) -> Dict:
+    def _graphql(self, query: str, **variables) -> dict:
         body = {"query": query}
         if variables:
             body["variables"] = variables
@@ -291,7 +283,7 @@ class GitHubClient(GitHub):
         r.raise_for_status()
         return r.json()
 
-    def _fetch_search(self, scope: str, repo_filter: str) -> List[Dict]:
+    def _fetch_search(self, scope: str, repo_filter: str) -> list[dict]:
         q = f"is:pr is:open -author:@me {scope} {repo_filter}"
         r = self._graphql(_REVIEW_QUERY, q=q)
         return r.get("data", {}).get("search", {}).get("nodes", [])

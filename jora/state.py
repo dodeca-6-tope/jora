@@ -1,7 +1,7 @@
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
 
 from jora import agent
 from jora.git import Git, Worktree
@@ -19,7 +19,7 @@ class TaskItem:
     id: str
     title: str
     url: str
-    wt: Optional[Worktree] = None
+    wt: Worktree | None = None
     review_status: str = ""
     ci_status: str = ""
     session: bool = False
@@ -33,7 +33,7 @@ class ReviewItem:
     url: str
     repo_slug: str = ""
     branch: str = ""
-    wt: Optional[Worktree] = None
+    wt: Worktree | None = None
     review_status: str = ""
     ci_status: str = ""
     session: bool = False
@@ -53,9 +53,9 @@ class State:
 
     loading: int = 0
     loading_text: str = ""
-    tasks: List[Task] = field(default_factory=list)
-    prs_by_task: Dict[str, List[PullRequest]] = field(default_factory=dict)
-    review_prs: List[PullRequest] = field(default_factory=list)
+    tasks: list[Task] = field(default_factory=list)
+    prs_by_task: dict[str, list[PullRequest]] = field(default_factory=dict)
+    review_prs: list[PullRequest] = field(default_factory=list)
     _done: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _last_load: float = 0
@@ -149,7 +149,7 @@ class State:
 
     # -- Queries -------------------------------------------------------------
 
-    def task_pr_url(self, task_id: str) -> Optional[str]:
+    def task_pr_url(self, task_id: str) -> str | None:
         """Return the URL of the first PR matched to a task, or None."""
         prs = self.prs_by_task.get(task_id, [])
         return prs[0].url if prs else None
@@ -158,7 +158,7 @@ class State:
         """Check if a tmux session exists for the given worktree."""
         return self.tmux.has_session(self._session_name(wt))
 
-    def repos(self) -> List[str]:
+    def repos(self) -> list[str]:
         """Return registered repo names sorted by worktree count."""
         return self.git.known_repos()
 
@@ -169,7 +169,7 @@ class State:
         checks = {"SUCCESS": "ok", "FAILURE": "fail"}.get(ci, "neutral")
         return review, checks
 
-    def task_items(self) -> List[TaskItem]:
+    def task_items(self) -> list[TaskItem]:
         """Return tasks enriched with worktree, session, and PR status."""
         sessions = self.tmux.list_sessions()
         items = []
@@ -192,7 +192,7 @@ class State:
             )
         return items
 
-    def review_items(self) -> List[ReviewItem]:
+    def review_items(self) -> list[ReviewItem]:
         """Return review PRs enriched with worktree and session status."""
         sessions = self.tmux.list_sessions()
         items = []

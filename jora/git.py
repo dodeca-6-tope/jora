@@ -2,7 +2,6 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from jora.config import Config
 
@@ -70,7 +69,7 @@ class Git:
 
             shutil.rmtree(dest)
 
-    def known_repos(self) -> List[str]:
+    def known_repos(self) -> list[str]:
         if not self._repos_dir.exists():
             return []
         repos = [d.name for d in self._repos_dir.iterdir() if d.is_dir()]
@@ -81,7 +80,7 @@ class Git:
                     wt_counts[d.name] = sum(1 for w in d.iterdir() if w.is_dir())
         return sorted(repos, key=lambda r: (-wt_counts.get(r, 0), r))
 
-    def repo_path(self, repo_name: str) -> Optional[Path]:
+    def repo_path(self, repo_name: str) -> Path | None:
         p = self._repos_dir / repo_name
         return p if p.exists() else None
 
@@ -102,7 +101,7 @@ class Git:
         except subprocess.SubprocessError:
             return ""
 
-    def list_worktrees(self) -> Dict[Worktree, Path]:
+    def list_worktrees(self) -> dict[Worktree, Path]:
         if not self._worktrees_dir.exists():
             return {}
         result = {}
@@ -114,13 +113,13 @@ class Git:
                     result[Worktree(repo_dir.name, wt.name)] = wt
         return result
 
-    def find_worktree(self, wt: Worktree) -> Optional[Path]:
+    def find_worktree(self, wt: Worktree) -> Path | None:
         path = self._worktrees_dir / wt.repo / wt.key
         if path.is_dir() and (path / ".git").exists():
             return path
         return None
 
-    def find_worktree_by_key(self, key: str) -> Optional[Worktree]:
+    def find_worktree_by_key(self, key: str) -> Worktree | None:
         """Scan all repos for a worktree with the given key."""
         if not self._worktrees_dir.exists():
             return None
@@ -165,7 +164,7 @@ class Git:
         )
         return merged.returncode == 0
 
-    def clean_worktrees(self, github) -> List[Worktree]:
+    def clean_worktrees(self, github) -> list[Worktree]:
         from concurrent.futures import ThreadPoolExecutor
 
         if not self._worktrees_dir.exists():
