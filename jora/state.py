@@ -117,8 +117,10 @@ class State:
             self.on_change()
 
         threading.Thread(target=self.github.warm, daemon=True).start()
+        # Reviews don't depend on tasks — start in parallel
         t_reviews = threading.Thread(target=load_reviews, daemon=True)
         t_reviews.start()
+        # Tasks must complete before PRs (PRs match by task identifier)
         load_tasks()
         t_prs = threading.Thread(target=load_prs, daemon=True)
         t_prs.start()
@@ -164,6 +166,7 @@ class State:
         items = []
         for task in self.tasks:
             task_id = task.identifier
+            # Scan all repos — task may have a worktree in any of them
             wt = self.git.find_worktree_by_key(task_id.lower())
             pr = next(iter(self.prs_by_task.get(task_id, [])), None)
             review_status, ci_status = self._pr_marks(pr) if pr else ("", "")
@@ -184,6 +187,7 @@ class State:
         sessions = self.tmux.list_sessions()
         items = []
         for pr in self.review_prs:
+            # Worktree identity derived from PR's repo + number
             repo_name = pr.repo_slug.split("/")[-1]
             wt = Worktree(repo_name, f"review-{pr.number}")
             review_status, ci_status = self._pr_marks(pr)
@@ -212,13 +216,11 @@ class State:
             self.tmux.create_session(name, str(path))
 
     def attach(self, wt: Worktree):
-        """Attach to a tmux session."""
         name = self._session_name(wt)
         self.on_attach(name)
         self.on_change()
 
     def open_task(self, task_id: str, repo: str = None) -> Worktree:
-        """Ensure worktree + session exist for a task."""
         wt = self.git.find_worktree_by_key(task_id.lower())
         if not wt:
             rp = self.git.repo_path(repo)
@@ -230,7 +232,6 @@ class State:
         return wt
 
     def open_review(self, number: int, repo_slug: str, branch: str) -> Worktree:
-        """Ensure worktree + session exist for a review PR."""
         repo_name = repo_slug.split("/")[-1]
         wt = Worktree(repo_name, f"review-{number}")
         if not self.git.find_worktree(wt):
@@ -243,7 +244,6 @@ class State:
         return wt
 
     def open_task_pr(self, task_id: str):
-        """Open the PR URL for a task."""
         url = self.task_pr_url(task_id)
         if url:
             self.on_open_url(url)
@@ -251,7 +251,6 @@ class State:
             self.on_alert("No PR for this task")
 
     def open_task_linear(self, task_id: str):
-        """Open the Linear issue URL for a task."""
         task = next((t for t in self.tasks if t.identifier == task_id), None)
         if task:
             self.on_open_url(task.url)
@@ -259,8 +258,8 @@ class State:
             self.on_alert(f"Task {task_id} not found")
 
     def fix(self, task_id: str, repo: str = None):
-        """Ensure worktree, create session, launch AI agent."""
         wt = self.git.find_worktree_by_key(task_id.lower())
+        # Don't run over an active session or uncommitted work
         if wt and self.has_session(wt):
             self.on_alert("Session already running — use ⏎ to attach")
             return
@@ -272,7 +271,6 @@ class State:
         self.tmux.send_keys(name, agent.command(f"Fix task {task_id}"))
 
     def kill_session(self, wt: Worktree):
-        """Kill a tmux session."""
         name = self._session_name(wt)
         if not self.tmux.has_session(name):
             self.on_alert("No session")
@@ -282,7 +280,6 @@ class State:
         self.on_change()
 
     def delete_worktree(self, wt: Worktree):
-        """Kill session if running, remove worktree."""
         if not self.git.find_worktree(wt):
             self.on_alert(f"No worktree for {wt.key}")
             return
@@ -294,7 +291,6 @@ class State:
         self.on_change()
 
     def clean(self):
-        """Remove stale worktrees and their sessions."""
         removed = self.git.clean_worktrees(self.github)
         for wt in removed:
             name = self._session_name(wt)
