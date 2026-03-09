@@ -1,11 +1,6 @@
-"""Terminal: alt screen, input, rendering."""
+"""App: tabs, rows, actions, rendering."""
 
-import atexit
 import os
-import select
-import sys
-import termios
-import tty
 from dataclasses import dataclass, field
 
 from jora.actions.clean import Clean
@@ -18,6 +13,7 @@ from jora.actions.quit import Quit
 from jora.actions.refresh import Refresh
 from jora.actions.select import Select
 from jora.notifications import Notifications
+from jora.terminal import Terminal
 
 
 @dataclass
@@ -62,9 +58,7 @@ def dispatch(key, row, state):
     return None
 
 
-_saved = None
-_active = False
-_fd = None
+term = Terminal()
 
 # -- ANSI --------------------------------------------------------------------
 
@@ -87,97 +81,6 @@ _MARK = {
 }
 
 
-# -- Terminal setup / teardown -----------------------------------------------
-
-
-def _enter_raw():
-    """Switch to raw mode, re-enable output processing for \n → \r\n."""
-    tty.setraw(_fd)
-    attrs = termios.tcgetattr(_fd)
-    attrs[1] |= termios.OPOST
-    termios.tcsetattr(_fd, termios.TCSADRAIN, attrs)
-
-
-def _restore_terminal():
-    """Restore saved terminal attributes."""
-    if _saved:
-        termios.tcsetattr(_fd, termios.TCSADRAIN, _saved)
-
-
-def _init():
-    """Enter alt screen, hide cursor, enable focus events."""
-    global _saved, _active, _fd
-    _fd = sys.stdin.fileno()
-    _saved = termios.tcgetattr(_fd)
-    _enter_raw()
-    _active = True
-    sys.stdout.write("\033[?1049h\033[?25l\033[?1004h")
-    sys.stdout.flush()
-    atexit.register(_cleanup)
-
-
-def _cleanup():
-    """Leave alt screen, show cursor, restore terminal."""
-    global _active
-    if not _active:
-        return
-    _active = False
-    sys.stdout.write("\033[?1004l\033[?25h\033[?1049l")
-    sys.stdout.flush()
-    _restore_terminal()
-
-
-def suspend():
-    """Leave alt screen and restore terminal for a child process."""
-    sys.stdout.write("\033[?25h\033[?1049l")
-    sys.stdout.flush()
-    _restore_terminal()
-
-
-def resume():
-    """Re-enter alt screen and raw mode after a child process."""
-    _enter_raw()
-    sys.stdout.write("\033[?1049h\033[?25l")
-    sys.stdout.flush()
-
-
-# -- Input -------------------------------------------------------------------
-
-
-def _readkey() -> str | None:
-    """Read a single keypress. Returns None on timeout (1/60s)."""
-    ready, _, _ = select.select([_fd], [], [], 1 / 60)
-    if not ready:
-        return None
-    ch = os.read(_fd, 1)
-    if ch == b"\x1b":
-        if select.select([_fd], [], [], 0.02)[0]:
-            seq = os.read(_fd, 16)
-            if seq[:2] == b"[A":
-                return "up"
-            if seq[:2] == b"[B":
-                return "down"
-            if seq[:2] == b"[C":
-                return "right"
-            if seq[:2] == b"[D":
-                return "left"
-            if seq[:2] == b"[I":
-                return "focus"
-            if seq[:2] == b"[O":
-                return None
-        return "esc"
-    if ch == b"\t":
-        return "tab"
-    if ch in (b"\r", b"\n"):
-        return "enter"
-    if ch == b"\x03":
-        raise KeyboardInterrupt
-    return ch.decode("utf-8", errors="ignore")
-
-
-# -- Rendering ---------------------------------------------------------------
-
-
 def _format_row(row: Row, selected: bool) -> str:
     """Format a single row line. ◆ = session active, ◇ = worktree exists."""
     wt = "◆" if row.session else ("◇" if row.worktree else f"{_FAINT}◇{_RESET}")
@@ -192,19 +95,6 @@ def _format_row(row: Row, selected: bool) -> str:
         else f"{_FAINT}○ ○{_RESET}"
     )
     return f"{cur} {marks} {row.key} {wt} {title}"
-
-
-def _render(lines: list[str]):
-    """Write full screen contents with synchronized update to avoid flicker."""
-    buf = "\033[?2026h\033[H"
-    for line in lines:
-        buf += line + "\033[K\n"
-    buf += "\033[J\033[?2026l"
-    sys.stdout.buffer.write(buf.encode())
-    sys.stdout.buffer.flush()
-
-
-# -- App --------------------------------------------------------------------
 
 
 def _item_to_row(item, actions):
@@ -287,11 +177,11 @@ class App:
         self._notifications.add(text)
 
     def __enter__(self):
-        _init()
+        term.__enter__()
         return self
 
     def __exit__(self, *_):
-        _cleanup()
+        term.__exit__()
 
     @property
     def _total_rows(self) -> int:
@@ -339,7 +229,7 @@ class App:
 
         self._draw()
 
-        key = _readkey()
+        key = term.readkey()
         if key is None:
             return None, None
 
@@ -359,7 +249,7 @@ class App:
         spinner_ch = _SPINNER[self._spin // 3 % len(_SPINNER)] if loading else " "
 
         if loading and self.state.loading_text:
-            _render([f"{self.state.loading_text} {spinner_ch}"])
+            term.render([f"{self.state.loading_text} {spinner_ch}"])
             return
 
         tab_bar = ""
@@ -403,19 +293,19 @@ class App:
         if msgs:
             lines.append("")
             lines.extend(msgs)
-        _render(lines)
+        term.render(lines)
 
 
 def pick(title: str, items: list[str]) -> int | None:
     """Show a picker UI. Returns selected index or None if cancelled."""
-    owned = not _active
+    owned = not term.active
     if owned:
-        _init()
+        term.__enter__()
     try:
         return _pick_loop(title, items)
     finally:
         if owned:
-            _cleanup()
+            term.cleanup()
 
 
 def _pick_loop(title: str, items: list[str]) -> int | None:
@@ -428,10 +318,10 @@ def _pick_loop(title: str, items: list[str]) -> int | None:
             lines.append(f"{cur} {item}")
         lines.append("")
         lines.append("[\u23ce] select  [esc] back")
-        _render(lines)
+        term.render(lines)
 
         try:
-            key = _readkey()
+            key = term.readkey()
         except KeyboardInterrupt:
             return None
         if key is None:

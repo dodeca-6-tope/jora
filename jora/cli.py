@@ -6,7 +6,7 @@ import sys
 import webbrowser
 
 from jora import keychain
-from jora.app import App, dispatch, resume, suspend
+from jora.app import App, dispatch, term
 from jora.config import Config
 from jora.git import Git
 from jora.github import GitHubClient
@@ -117,7 +117,11 @@ def main():
             linear=linear,
             github=github,
             on_alert=app.alert,
-            on_attach=lambda name: (suspend(), tmux.attach_session(name), resume()),
+            on_attach=lambda name: (
+                term.suspend(),
+                tmux.attach_session(name),
+                term.resume(),
+            ),
             on_open_url=webbrowser.open,
             on_defer=pending.append,
             on_change=app.rebuild,
