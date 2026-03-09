@@ -274,12 +274,14 @@ class Git:
         path = self._worktrees_dir / wt.repo / wt.key
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        subprocess.run(
+        r = subprocess.run(
             ["git", "fetch", "origin", f"pull/{pr_number}/head:{branch}"],
             capture_output=True,
-            check=True,
+            text=True,
             cwd=str(rp),
         )
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or "Failed to fetch PR branch")
         r = subprocess.run(
             ["git", "worktree", "add", str(path), branch],
             capture_output=True,
@@ -318,24 +320,31 @@ class Git:
         )
 
         base = _default_branch(cwd)
-        subprocess.run(
-            ["git", "fetch", "origin", base], capture_output=True, check=True, cwd=cwd
+        r = subprocess.run(
+            ["git", "fetch", "origin", base],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
         )
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or "Failed to fetch from origin")
 
         if branch_exists:
-            subprocess.run(
+            r = subprocess.run(
                 ["git", "worktree", "add", str(path), branch],
                 capture_output=True,
-                check=True,
+                text=True,
                 cwd=cwd,
             )
         else:
-            subprocess.run(
+            r = subprocess.run(
                 ["git", "worktree", "add", str(path), "-b", branch, f"origin/{base}"],
                 capture_output=True,
-                check=True,
+                text=True,
                 cwd=cwd,
             )
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or "Failed to create worktree")
 
         return wt
 

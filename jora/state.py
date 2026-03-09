@@ -10,10 +10,6 @@ from jora.linear import Task, Tracker
 from jora.tmux import Tmux
 
 
-def _noop(*_args, **_kwargs):
-    return None
-
-
 @dataclass
 class TaskItem:
     id: str
@@ -45,11 +41,11 @@ class State:
     tmux: Tmux
     linear: Tracker
     github: GitHub
-    on_alert: Callable = _noop
-    on_attach: Callable = _noop
-    on_open_url: Callable = _noop
-    on_defer: Callable = _noop
-    on_change: Callable = _noop
+    on_alert: Callable
+    on_attach: Callable
+    on_open_url: Callable
+    on_defer: Callable
+    on_change: Callable
 
     loading: int = 0
     loading_text: str = ""
@@ -93,9 +89,12 @@ class State:
 
         def load_tasks():
             try:
-                self.tasks = self.linear.fetch_tasks()
+                tasks = self.linear.fetch_tasks()
             except Exception as e:
                 self.on_alert(f"Failed to load tasks: {e}")
+                return
+            with self._lock:
+                self.tasks = tasks
             self.on_change()
 
         def load_prs():
@@ -175,13 +174,16 @@ class State:
 
     def task_items(self) -> list[TaskItem]:
         """Return tasks enriched with worktree, session, and PR status."""
+        with self._lock:
+            tasks = list(self.tasks)
+            prs_by_task = dict(self.prs_by_task)
         sessions = self.tmux.list_sessions()
         items = []
-        for task in self.tasks:
+        for task in tasks:
             task_id = task.identifier
             # Scan all repos — task may have a worktree in any of them
             wt = self.git.find_worktree_by_key(task_id.lower())
-            pr = next(iter(self.prs_by_task.get(task_id, [])), None)
+            pr = next(iter(prs_by_task.get(task_id, [])), None)
             review_status, ci_status = self._pr_marks(pr) if pr else ("", "")
             items.append(
                 TaskItem(
@@ -199,9 +201,11 @@ class State:
 
     def review_items(self) -> list[ReviewItem]:
         """Return review PRs enriched with worktree and session status."""
+        with self._lock:
+            review_prs = list(self.review_prs)
         sessions = self.tmux.list_sessions()
         items = []
-        for pr in self.review_prs:
+        for pr in review_prs:
             # Worktree identity derived from PR's repo + number
             repo_name = pr.repo_slug.split("/")[-1]
             wt = Worktree(repo_name, f"review-{pr.number}")

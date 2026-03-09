@@ -10,7 +10,7 @@ from jora.config import Config
 from jora.git import Git, Worktree
 from jora.github import CheckStatus, PullRequest, PullRequestReview
 from jora.linear import Tracker
-from jora.state import State, _noop
+from jora.state import State
 from jora.tmux import Tmux
 from tests.mocks import FakeGitHub, FakeTracker
 
@@ -44,6 +44,10 @@ def _make_pr(
     )
 
 
+def _noop(*_args, **_kwargs):
+    return None
+
+
 def _make_state(
     tmp_path,
     tasks=None,
@@ -62,7 +66,9 @@ def _make_state(
         linear=linear or FakeTracker(tasks),
         github=github or FakeGitHub(prs_by_task=prs_by_task, review_prs=review_prs),
         on_alert=lambda text: alerts.append(text),
+        on_attach=_noop,
         on_open_url=on_open_url,
+        on_defer=_noop,
         on_change=lambda: app.rebuild(),
     )
     app.state = s
