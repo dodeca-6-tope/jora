@@ -10,7 +10,7 @@ from jora.linear import Task, Tracker
 from jora.tmux import Tmux
 
 
-@dataclass
+@dataclass(frozen=True)
 class TaskItem:
     id: str
     title: str
@@ -22,7 +22,7 @@ class TaskItem:
     session: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReviewItem:
     id: str
     number: int
@@ -35,8 +35,14 @@ class ReviewItem:
     session: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class State:
+    tasks: tuple[TaskItem, ...] = ()
+    reviews: tuple[ReviewItem, ...] = ()
+
+
+@dataclass
+class Store:
     git: Git
     tmux: Tmux
     linear: Tracker
@@ -49,9 +55,9 @@ class State:
 
     loading: int = 0
     loading_text: str = ""
-    tasks: list[Task] = field(default_factory=list)
-    prs_by_task: dict[str, list[PullRequest]] = field(default_factory=dict)
-    review_prs: list[PullRequest] = field(default_factory=list)
+    _tasks: list[Task] = field(default_factory=list)
+    _prs_by_task: dict[str, list[PullRequest]] = field(default_factory=dict)
+    _review_prs: list[PullRequest] = field(default_factory=list)
     _done: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _last_load: float = 0
@@ -59,6 +65,15 @@ class State:
     @property
     def done(self) -> bool:
         return self._done.is_set()
+
+    # -- State snapshot ------------------------------------------------------
+
+    @property
+    def state(self) -> State:
+        return State(
+            tasks=tuple(self._build_task_items()),
+            reviews=tuple(self._build_review_items()),
+        )
 
     # -- Background runner ---------------------------------------------------
 
@@ -94,15 +109,15 @@ class State:
                 self.on_alert(f"Failed to load tasks: {e}")
                 return
             with self._lock:
-                self.tasks = tasks
+                self._tasks = tasks
             self.on_change()
 
         def load_prs():
             prs = self.github.fetch_task_prs(
-                [t.identifier for t in self.tasks],
+                [t.identifier for t in self._tasks],
             )
             with self._lock:
-                self.prs_by_task = prs
+                self._prs_by_task = prs
             self.on_change()
 
         def load_reviews():
@@ -114,7 +129,7 @@ class State:
             ]
             prs = self.github.fetch_review_prs(slugs)
             with self._lock:
-                self.review_prs = prs
+                self._review_prs = prs
             self.on_change()
 
         threading.Thread(target=self.github.warm, daemon=True).start()
@@ -154,7 +169,7 @@ class State:
 
     def task_pr_url(self, task_id: str) -> str | None:
         """Return the URL of the first PR matched to a task, or None."""
-        prs = self.prs_by_task.get(task_id, [])
+        prs = self._prs_by_task.get(task_id, [])
         return prs[0].url if prs else None
 
     def has_session(self, wt: Worktree) -> bool:
@@ -172,16 +187,15 @@ class State:
         checks = {"SUCCESS": "ok", "FAILURE": "fail"}.get(ci, "neutral")
         return review, checks
 
-    def task_items(self) -> list[TaskItem]:
+    def _build_task_items(self) -> list[TaskItem]:
         """Return tasks enriched with worktree, session, and PR status."""
         with self._lock:
-            tasks = list(self.tasks)
-            prs_by_task = dict(self.prs_by_task)
+            tasks = list(self._tasks)
+            prs_by_task = dict(self._prs_by_task)
         sessions = self.tmux.list_sessions()
         items = []
         for task in tasks:
             task_id = task.identifier
-            # Scan all repos — task may have a worktree in any of them
             wt = self.git.find_worktree_by_key(task_id.lower())
             pr = next(iter(prs_by_task.get(task_id, [])), None)
             review_status, ci_status = self._pr_marks(pr) if pr else ("", "")
@@ -199,14 +213,13 @@ class State:
             )
         return items
 
-    def review_items(self) -> list[ReviewItem]:
+    def _build_review_items(self) -> list[ReviewItem]:
         """Return review PRs enriched with worktree and session status."""
         with self._lock:
-            review_prs = list(self.review_prs)
+            review_prs = list(self._review_prs)
         sessions = self.tmux.list_sessions()
         items = []
         for pr in review_prs:
-            # Worktree identity derived from PR's repo + number
             repo_name = pr.repo_slug.split("/")[-1]
             wt = Worktree(repo_name, f"review-{pr.number}")
             exists = self.git.find_worktree(wt) is not None
@@ -269,7 +282,7 @@ class State:
 
     def open_task_linear(self, task_id: str):
         """Open the Linear issue URL for a task."""
-        task = next((t for t in self.tasks if t.identifier == task_id), None)
+        task = next((t for t in self._tasks if t.identifier == task_id), None)
         if task:
             self.on_open_url(task.url)
         else:
@@ -278,7 +291,6 @@ class State:
     def fix(self, task_id: str, repo: str = None):
         """Launch AI agent on a task. Creates worktree and session if needed."""
         wt = self.git.find_worktree_by_key(task_id.lower())
-        # Don't run over an active session or uncommitted work
         if wt and self.has_session(wt):
             self.on_alert("Session already running — use ⏎ to attach")
             return

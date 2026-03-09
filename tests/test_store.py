@@ -10,7 +10,7 @@ from jora.config import Config
 from jora.git import Git, Worktree
 from jora.github import CheckStatus, PullRequest, PullRequestReview
 from jora.linear import Tracker
-from jora.state import State
+from jora.state import Store
 from jora.tmux import Tmux
 from tests.mocks import FakeGitHub, FakeTracker
 
@@ -59,8 +59,8 @@ def _make_state(
 ):
     cfg = Config(jora_dir=tmp_path, tmux_prefix=TEST_TMUX_PREFIX)
     alerts = []
-    app = App()
-    s = State(
+    app = None
+    s = Store(
         git=Git(cfg),
         tmux=Tmux(cfg.tmux_prefix),
         linear=linear or FakeTracker(tasks),
@@ -71,7 +71,7 @@ def _make_state(
         on_defer=_noop,
         on_change=lambda: app.rebuild(),
     )
-    app.state = s
+    app = App(store=s)
     return s, alerts, app
 
 

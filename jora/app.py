@@ -44,16 +44,16 @@ def actions_for(row):
     return _GLOBAL_ACTIONS + (row.actions if row else [])
 
 
-def dispatch(key, row, state):
+def dispatch(key, row, store):
     """Match a keypress to an action and run it. Returns 'exit' to quit."""
     if not key:
         return None
     for action in actions_for(row):
-        if action.matches(key) and action.enabled(state, row):
+        if action.matches(key) and action.enabled(store, row):
             try:
-                return action.run(state, row)
+                return action.run(store, row)
             except Exception as e:
-                state.on_alert(f"Error: {e}")
+                store.on_alert(f"Error: {e}")
                 return None
     return None
 
@@ -131,7 +131,7 @@ class Tab:
 
 @dataclass
 class App:
-    state: object = None
+    store: object
     _notifications: Notifications = field(default_factory=Notifications)
     _tabs: list[Tab] = field(
         default_factory=lambda: [
@@ -160,10 +160,9 @@ class App:
 
     def rebuild(self):
         """Rebuild all tabs from current state data."""
-        if not self.state:
-            return
-        _rebuild_tab(self._tabs[0], self.state.task_items())
-        _rebuild_tab(self._tabs[1], self.state.review_items())
+        state = self.store.state
+        _rebuild_tab(self._tabs[0], state.tasks)
+        _rebuild_tab(self._tabs[1], state.reviews)
 
     def switch_tab(self, delta: int, wrap: bool = False):
         """Move tab index by *delta*, optionally wrapping around."""
@@ -224,7 +223,7 @@ class App:
         total = self._total_rows
         self.stabilize_cursor()
 
-        if self.state and self.state.loading:
+        if self.store.loading:
             self._spin += 1
 
         self._draw()
@@ -245,11 +244,10 @@ class App:
 
     def _draw(self):
         """Render the full screen: header, rows, help bar, notifications."""
-        loading = self.state.loading if self.state else False
-        spinner_ch = _SPINNER[self._spin // 3 % len(_SPINNER)] if loading else " "
+        spinner_ch = _SPINNER[self._spin // 3 % len(_SPINNER)] if self.store.loading else " "
 
-        if loading and self.state.loading_text:
-            term.render([f"{self.state.loading_text} {spinner_ch}"])
+        if self.store.loading and self.store.loading_text:
+            term.render([f"{self.store.loading_text} {spinner_ch}"])
             return
 
         tab_bar = ""
@@ -267,28 +265,27 @@ class App:
         for i, sec in enumerate(self.sections):
             if i > 0:
                 lines.append("")
-            if sec.subtitle and not sec.rows and not loading:
+            if sec.subtitle and not sec.rows and not self.store.loading:
                 lines.append(f"  {_ITALIC}{sec.subtitle}{_RESET}")
             for row in sec.rows:
                 lines.append(_format_row(row, flat_idx == self.tab.cursor))
                 flat_idx += 1
 
         _, cur_row = self._at(self.tab.cursor)
-        if self.state:
-            parts = []
-            if len(self._tabs) > 1:
-                parts.append("[⇥] switch")
-            pairs = [
-                (a.key, a.label)
-                for a in actions_for(cur_row)
-                if a.enabled(self.state, cur_row)
-            ]
-            help_text = "  ".join(f"[{k}] {l}" for k, l in pairs)
-            if help_text:
-                parts.append(help_text)
-            if parts:
-                lines.append("")
-                lines.append("  ".join(parts))
+        parts = []
+        if len(self._tabs) > 1:
+            parts.append("[⇥] switch")
+        pairs = [
+            (a.key, a.label)
+            for a in actions_for(cur_row)
+            if a.enabled(self.store, cur_row)
+        ]
+        help_text = "  ".join(f"[{k}] {l}" for k, l in pairs)
+        if help_text:
+            parts.append(help_text)
+        if parts:
+            lines.append("")
+            lines.append("  ".join(parts))
         msgs = self._notifications.active()
         if msgs:
             lines.append("")

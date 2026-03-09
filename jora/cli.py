@@ -11,7 +11,7 @@ from jora.config import Config
 from jora.git import Git
 from jora.github import GitHubClient
 from jora.linear import LinearClient
-from jora.state import State
+from jora.state import Store
 from jora.tmux import Tmux
 
 # -- Shell init (jora init <shell>) ------------------------------------------
@@ -109,24 +109,26 @@ def main():
     linear = LinearClient(keychain.require("linear", "Linear"))
     github = GitHubClient(keychain.require("github", "GitHub"))
 
-    with App() as app:
-        pending = collections.deque()
-        s = State(
-            git=git,
-            tmux=tmux,
-            linear=linear,
-            github=github,
-            on_alert=app.alert,
-            on_attach=lambda name: (
-                term.suspend(),
-                tmux.attach_session(name),
-                term.resume(),
-            ),
-            on_open_url=webbrowser.open,
-            on_defer=pending.append,
-            on_change=app.rebuild,
-        )
-        app.state = s
+    pending = collections.deque()
+    app = None
+    s = Store(
+        git=git,
+        tmux=tmux,
+        linear=linear,
+        github=github,
+        on_alert=lambda text: app.alert(text),
+        on_attach=lambda name: (
+            term.suspend(),
+            tmux.attach_session(name),
+            term.resume(),
+        ),
+        on_open_url=webbrowser.open,
+        on_defer=pending.append,
+        on_change=lambda: app.rebuild(),
+    )
+    app = App(store=s)
+
+    with app:
         s.load()
 
         while True:
