@@ -56,8 +56,7 @@ class Terminal:
 
     def readkey(self) -> str | None:
         """Read a single keypress. Returns None on timeout (1/60s)."""
-        ready, _, _ = select.select([self._fd], [], [], 1 / 60)
-        if not ready:
+        if not select.select([self._fd], [], [], 1 / 60)[0]:
             return None
         ch = os.read(self._fd, 1)
         if ch == b"\x1b":

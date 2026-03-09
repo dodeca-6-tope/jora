@@ -43,8 +43,11 @@ class LinearClient(Tracker):
         return data.get("data", {})
 
     def whoami(self) -> str:
-        result = self._graphql("{ viewer { name } }")
-        return result.get("viewer", {}).get("name", "Unknown")
+        return (
+            self._graphql("{ viewer { name } }")
+            .get("viewer", {})
+            .get("name", "Unknown")
+        )
 
     def fetch_tasks(self) -> list[Task]:
         query = """

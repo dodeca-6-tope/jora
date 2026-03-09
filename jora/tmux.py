@@ -8,8 +8,9 @@ class Tmux:
         self.prefix = prefix
 
     def _run(self, *args: str) -> str:
-        r = subprocess.run(["tmux", *args], capture_output=True, text=True)
-        return r.stdout.strip()
+        return subprocess.run(
+            ["tmux", *args], capture_output=True, text=True
+        ).stdout.strip()
 
     def has_session(self, name: str) -> bool:
         r = subprocess.run(

@@ -220,8 +220,11 @@ class GitHubClient(GitHub):
     def fetch_task_prs(self, task_keys: list[str]) -> dict[str, list[PullRequest]]:
         try:
             r = self._graphql(_AUTHORED_QUERY)
-            nodes = r.get("data", {}).get("search", {}).get("nodes", [])
-            all_prs = [_parse_pr(n) for n in nodes if n]
+            all_prs = [
+                _parse_pr(n)
+                for n in r.get("data", {}).get("search", {}).get("nodes", [])
+                if n
+            ]
         except (requests.RequestException, KeyError):
             all_prs = []
         return _match_prs_to_tasks(task_keys, all_prs)
@@ -297,6 +300,8 @@ class GitHubClient(GitHub):
         return r.json()
 
     def _fetch_search(self, scope: str, repo_filter: str) -> list[dict]:
-        q = f"is:pr is:open -author:@me {scope} {repo_filter}"
-        r = self._graphql(_REVIEW_QUERY, q=q)
+        r = self._graphql(
+            _REVIEW_QUERY,
+            q=f"is:pr is:open -author:@me {scope} {repo_filter}",
+        )
         return r.get("data", {}).get("search", {}).get("nodes", [])
