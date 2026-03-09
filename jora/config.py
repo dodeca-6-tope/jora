@@ -5,7 +5,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Config:
     jora_dir: Path = Path.home() / ".jora"
-    tmux_prefix: str = "jora_"
+    tmux_prefix: str = "jora·"
 
     @property
     def repos_dir(self) -> Path:

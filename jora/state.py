@@ -163,7 +163,7 @@ class Store:
 
     def _session_name(self, wt: Worktree) -> str:
         """Derive tmux session name from a worktree identity."""
-        return f"{self.tmux.prefix}{wt.repo}_{wt.key}".lower().replace(":", "_")
+        return f"{self.tmux.prefix}{wt.repo}·{wt.key}".lower().replace(":", "_")
 
     # -- Queries -------------------------------------------------------------
 
