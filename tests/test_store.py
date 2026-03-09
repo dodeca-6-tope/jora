@@ -17,7 +17,6 @@ from tests.mocks import FakeGitHub, FakeTracker
 # -- Helpers -----------------------------------------------------------------
 
 TEST_TMUX_PREFIX = "test_jora_"
-WT = Worktree("myrepo", "proj-1")
 
 
 def _wait_done(s, timeout=5):
@@ -48,7 +47,7 @@ def _noop(*_args, **_kwargs):
     return None
 
 
-def _make_state(
+def _make_store(
     tmp_path,
     tasks=None,
     prs_by_task=None,
@@ -75,8 +74,8 @@ def _make_state(
     return s, alerts, app
 
 
-def _loaded_state(tmp_path, **kwargs):
-    s, alerts, app = _make_state(tmp_path, **kwargs)
+def _loaded_store(tmp_path, **kwargs):
+    s, alerts, app = _make_store(tmp_path, **kwargs)
     s.load()
     _wait_done(s)
     return s, alerts, app
@@ -123,11 +122,11 @@ def _wait_loading(s, timeout=5):
         time.sleep(0.01)
 
 
-# -- load() -----------------------------------------------------------------
+# -- State snapshot ----------------------------------------------------------
 
 
-def test_load_populates_tasks(tmp_path):
-    s, _, app = _loaded_state(
+def test_state_snapshot_tasks(tmp_path):
+    s, _, _ = _loaded_store(
         tmp_path,
         tasks=[
             {"identifier": "PROJ-1", "title": "First", "url": "u1"},
@@ -135,13 +134,15 @@ def test_load_populates_tasks(tmp_path):
         ],
     )
 
-    rows = app.sections[0].rows
-    assert len(rows) == 2
-    assert rows[0].title == "First"
-    assert rows[1].title == "Second"
+    state = s.state
+    assert len(state.tasks) == 2
+    assert state.tasks[0].id == "PROJ-1"
+    assert state.tasks[0].title == "First"
+    assert state.tasks[1].id == "PROJ-2"
+    assert state.tasks[1].title == "Second"
 
 
-def test_load_marks_and_pr_url(tmp_path):
+def test_state_snapshot_review_ci_status(tmp_path):
     tasks = [
         {"identifier": "PROJ-1", "title": "Approved", "url": "u1"},
         {"identifier": "PROJ-2", "title": "No PR", "url": "u2"},
@@ -170,19 +171,18 @@ def test_load_marks_and_pr_url(tmp_path):
             _make_pr(number=40, branch="feature/proj-4", ci=[CheckStatus("PENDING")])
         ],
     }
-    s, _, app = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
+    s, _, _ = _loaded_store(tmp_path, tasks=tasks, prs_by_task=prs)
 
-    rows = app.sections[0].rows
-    assert rows[0].marks == ("ok", "ok")
-    assert rows[1].marks == ()
-    assert rows[2].marks == ("fail", "fail")
-    assert rows[3].marks == ("neutral", "neutral")
+    t = s.state.tasks
+    assert (t[0].review_status, t[0].ci_status) == ("ok", "ok")
+    assert (t[1].review_status, t[1].ci_status) == ("", "")
+    assert (t[2].review_status, t[2].ci_status) == ("fail", "fail")
+    assert (t[3].review_status, t[3].ci_status) == ("neutral", "neutral")
+    assert t[0].pr_url == "url1"
+    assert t[1].pr_url == ""
 
-    assert s.task_pr_url("PROJ-1") == "url1"
-    assert s.task_pr_url("PROJ-2") is None
 
-
-def test_load_marks_mixed_reviewers(tmp_path):
+def test_state_snapshot_mixed_reviewers(tmp_path):
     tasks = [{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     prs = {
         "PROJ-1": [
@@ -197,11 +197,12 @@ def test_load_marks_mixed_reviewers(tmp_path):
             )
         ]
     }
-    _, _, app = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
-    assert app.sections[0].rows[0].marks == ("fail", "ok")
+    s, _, _ = _loaded_store(tmp_path, tasks=tasks, prs_by_task=prs)
+    t = s.state.tasks[0]
+    assert (t.review_status, t.ci_status) == ("fail", "ok")
 
 
-def test_load_marks_review_ok_ci_fail(tmp_path):
+def test_state_snapshot_review_ok_ci_fail(tmp_path):
     tasks = [{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     prs = {
         "PROJ-1": [
@@ -213,11 +214,12 @@ def test_load_marks_review_ok_ci_fail(tmp_path):
             )
         ]
     }
-    _, _, app = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
-    assert app.sections[0].rows[0].marks == ("ok", "fail")
+    s, _, _ = _loaded_store(tmp_path, tasks=tasks, prs_by_task=prs)
+    t = s.state.tasks[0]
+    assert (t.review_status, t.ci_status) == ("ok", "fail")
 
 
-def test_load_marks_no_ci(tmp_path):
+def test_state_snapshot_no_ci(tmp_path):
     tasks = [{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     prs = {
         "PROJ-1": [
@@ -228,11 +230,12 @@ def test_load_marks_no_ci(tmp_path):
             )
         ]
     }
-    _, _, app = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
-    assert app.sections[0].rows[0].marks == ("ok", "neutral")
+    s, _, _ = _loaded_store(tmp_path, tasks=tasks, prs_by_task=prs)
+    t = s.state.tasks[0]
+    assert (t.review_status, t.ci_status) == ("ok", "neutral")
 
 
-def test_load_marks_reviewer_updates_verdict(tmp_path):
+def test_state_snapshot_reviewer_updates_verdict(tmp_path):
     tasks = [{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     prs = {
         "PROJ-1": [
@@ -247,11 +250,12 @@ def test_load_marks_reviewer_updates_verdict(tmp_path):
             )
         ]
     }
-    _, _, app = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
-    assert app.sections[0].rows[0].marks == ("ok", "ok")
+    s, _, _ = _loaded_store(tmp_path, tasks=tasks, prs_by_task=prs)
+    t = s.state.tasks[0]
+    assert (t.review_status, t.ci_status) == ("ok", "ok")
 
 
-def test_load_task_pr_url_returns_first(tmp_path):
+def test_state_snapshot_pr_url_returns_first(tmp_path):
     tasks = [{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     prs = {
         "PROJ-1": [
@@ -259,20 +263,17 @@ def test_load_task_pr_url_returns_first(tmp_path):
             _make_pr(number=2, url="second", branch="b"),
         ]
     }
-    s, _, _ = _loaded_state(tmp_path, tasks=tasks, prs_by_task=prs)
-
-    assert s.task_pr_url("PROJ-1") == "first"
-
-
-def test_load_empty(tmp_path):
-    s, _, app = _loaded_state(tmp_path)
-
-    assert s.done
-    assert len(app.sections) == 1
-    assert app.sections[0].rows == []
+    s, _, _ = _loaded_store(tmp_path, tasks=tasks, prs_by_task=prs)
+    assert s.state.tasks[0].pr_url == "first"
 
 
-def test_load_error_sets_message(tmp_path):
+def test_state_snapshot_empty(tmp_path):
+    s, _, _ = _loaded_store(tmp_path)
+    assert s.state.tasks == ()
+    assert s.state.reviews == ()
+
+
+def test_load_error_alerts(tmp_path):
     class FailingTracker(Tracker):
         def whoami(self):
             return ""
@@ -280,63 +281,52 @@ def test_load_error_sets_message(tmp_path):
         def fetch_tasks(self):
             raise RuntimeError("API down")
 
-    _, alerts, _ = _loaded_state(tmp_path, linear=FailingTracker())
+    _, alerts, _ = _loaded_store(tmp_path, linear=FailingTracker())
 
     assert "API down" in " ".join(alerts)
 
 
-def test_load_sets_done(tmp_path):
-    s, _, _ = _make_state(tmp_path)
-    assert not s.done
-    s.load()
-    _wait_done(s)
-    assert s.done
-
-
-def test_load_detects_existing_worktrees(tmp_path):
+def test_state_snapshot_detects_worktrees(tmp_path):
     _fake_worktree(tmp_path, "myrepo", "proj-1")
-    _, _, app = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
-    assert app.sections[0].rows[0].worktree is True
+    assert s.state.tasks[0].wt is not None
 
 
 # -- Reviews -----------------------------------------------------------------
 
 
-def test_review_shown_with_worktree(tmp_path):
+def test_state_snapshot_review_with_worktree(tmp_path):
     review_pr = _make_pr(
         number=99, title="[PROJ-5] change", branch="proj-5-fix", repo_slug="org/repo"
     )
     _fake_worktree(tmp_path, "repo", "review-99")
 
-    _, _, app = _loaded_state(tmp_path, review_prs=[review_pr])
-    app.switch_tab(1)
+    s, _, _ = _loaded_store(tmp_path, review_prs=[review_pr])
 
-    assert len(app.sections) == 1
-    row = app.sections[0].rows[0]
-    assert row.key == "99"
-    assert row.title == "[PROJ-5] change"
-    assert row.worktree is True
+    r = s.state.reviews[0]
+    assert r.title == "[PROJ-5] change"
+    assert r.number == 99
+    assert r.wt is not None
 
 
-def test_review_shows_pr_title(tmp_path):
-    _, _, app = _loaded_state(
+def test_state_snapshot_review_title(tmp_path):
+    s, _, _ = _loaded_store(
         tmp_path, review_prs=[_make_pr(number=77, title="fix typo", branch="random")]
     )
-    app.switch_tab(1)
 
-    row = app.sections[0].rows[0]
-    assert row.title == "fix typo"
-    assert row.key == "77"
+    r = s.state.reviews[0]
+    assert r.title == "fix typo"
+    assert r.number == 77
 
 
-# -- rebuild ---------------------------------------------------------------
+# -- App rendering -----------------------------------------------------------
 
 
 def test_rebuild_tracks_worktree_lifecycle(tmp_path):
-    _, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     assert app.sections[0].rows[0].worktree is False
@@ -358,7 +348,7 @@ def test_rebuild_preserves_data(tmp_path):
         reviews=[PullRequestReview("APPROVED", "x")],
         ci=[CheckStatus("SUCCESS")],
     )
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path,
         tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
         prs_by_task={"PROJ-1": [pr]},
@@ -371,14 +361,10 @@ def test_rebuild_preserves_data(tmp_path):
     assert row.worktree is True
     assert row.marks == ("ok", "ok")
     assert row.title == "Task"
-    assert s.task_pr_url("PROJ-1") == "pr-url"
 
 
-# -- Row properties ----------------------------------------------------------
-
-
-def test_row_properties(tmp_path):
-    _, _, app = _loaded_state(
+def test_row_key_truncated(tmp_path):
+    _, _, app = _loaded_store(
         tmp_path,
         tasks=[
             {"identifier": "LONGPROJ-123", "title": "Long task", "url": "u1"},
@@ -390,7 +376,7 @@ def test_row_properties(tmp_path):
     assert row.title == "Long task"
 
 
-# -- Section help ------------------------------------------------------------
+# -- Action help -------------------------------------------------------------
 
 
 def _row_help(s, row):
@@ -398,7 +384,7 @@ def _row_help(s, row):
 
 
 def test_task_row_actions(tmp_path):
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -411,7 +397,7 @@ def test_task_row_actions(tmp_path):
 
 def test_task_row_actions_with_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     wt = s.create_task_worktree("proj-1", "myrepo")
@@ -423,7 +409,7 @@ def test_task_row_actions_with_session(tmp_path):
 
 def test_task_row_actions_with_pr(tmp_path):
     pr = _make_pr(number=10, url="url1", branch="feature/proj-1")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path,
         tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
         prs_by_task={"PROJ-1": [pr]},
@@ -436,7 +422,7 @@ def test_task_row_actions_with_pr(tmp_path):
 def test_review_row_actions(tmp_path):
     review_pr = _make_pr(number=99, title="[PROJ-1] change", repo_slug="org/repo")
     _fake_worktree(tmp_path, "repo", "review-99")
-    s, _, app = _loaded_state(tmp_path, review_prs=[review_pr])
+    s, _, app = _loaded_store(tmp_path, review_prs=[review_pr])
     app.switch_tab(1)
 
     row = app.sections[0].rows[0]
@@ -448,15 +434,15 @@ def test_review_row_actions(tmp_path):
     assert "kill" not in help_text
 
 
-# -- open_review() -----------------------------------------------------------
+# -- create_review_worktree() ------------------------------------------------
 
 
-def test_open_review_creates_session_for_existing_worktree(tmp_path):
+def test_create_review_worktree_and_session(tmp_path):
     _fake_worktree(tmp_path, "repo", "review-99")
     pr = _make_pr(
         number=99, title="[PROJ-1] fix", branch="proj-1-fix", repo_slug="org/repo"
     )
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path,
         tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
         review_prs=[pr],
@@ -468,12 +454,12 @@ def test_open_review_creates_session_for_existing_worktree(tmp_path):
     assert s.has_session(wt)
 
 
-def test_open_review_reuses_session(tmp_path):
+def test_create_review_worktree_reuses_session(tmp_path):
     _fake_worktree(tmp_path, "repo", "review-99")
     pr = _make_pr(
         number=99, title="[PROJ-1] fix", branch="proj-1-fix", repo_slug="org/repo"
     )
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path,
         tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
         review_prs=[pr],
@@ -486,8 +472,8 @@ def test_open_review_reuses_session(tmp_path):
     assert s.has_session(wt)
 
 
-def test_open_review_invalid_repo(tmp_path):
-    s, _, _ = _loaded_state(
+def test_create_review_worktree_invalid_repo(tmp_path):
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -495,27 +481,26 @@ def test_open_review_invalid_repo(tmp_path):
         s.create_review_worktree(99, "org/unknown", "proj-1-fix")
 
 
-# -- open_task() -------------------------------------------------------------
+# -- create_task_worktree() --------------------------------------------------
 
 
-def test_open_task_creates_worktree_and_session(tmp_path):
+def test_create_task_worktree_and_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
     wt = s.create_task_worktree("proj-1", "myrepo")
     s.create_session(wt)
 
-    assert s.git.find_worktree(wt)
-    assert s.has_session(wt)
-    assert app.sections[0].rows[0].worktree is True
-    assert app.sections[0].rows[0].session is True
+    state = s.state
+    assert state.tasks[0].wt is not None
+    assert state.tasks[0].session is True
 
 
-def test_open_task_reuses_existing_worktree(tmp_path):
+def test_create_task_worktree_reuses_existing(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -525,9 +510,9 @@ def test_open_task_reuses_existing_worktree(tmp_path):
     assert wt1 == wt2
 
 
-def test_open_task_reuses_session(tmp_path):
+def test_create_task_worktree_reuses_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -538,8 +523,8 @@ def test_open_task_reuses_session(tmp_path):
     assert s.has_session(wt)
 
 
-def test_open_task_invalid_repo(tmp_path):
-    s, _, _ = _loaded_state(
+def test_create_task_worktree_invalid_repo(tmp_path):
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -552,7 +537,7 @@ def test_open_task_invalid_repo(tmp_path):
 
 def test_select_attaches_existing_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     wt = s.create_task_worktree("proj-1", "myrepo")
@@ -566,7 +551,7 @@ def test_select_attaches_existing_session(tmp_path):
 
 def test_select_task_picks_repo_and_opens(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     row = _task_row(app)
@@ -575,13 +560,14 @@ def test_select_task_picks_repo_and_opens(tmp_path):
         dispatch("enter", row, s)
         _wait_loading(s)
 
-    assert s.git.find_worktree(Worktree("myrepo", "proj-1"))
-    assert s.has_session(Worktree("myrepo", "proj-1"))
+    state = s.state
+    assert state.tasks[0].wt is not None
+    assert state.tasks[0].session is True
 
 
 def test_select_task_cancelled_repo_pick(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     row = _task_row(app)
@@ -589,12 +575,12 @@ def test_select_task_cancelled_repo_pick(tmp_path):
     with patch("jora.app.pick", return_value=None):
         dispatch("enter", row, s)
 
-    assert not s.git.find_worktree(Worktree("myrepo", "proj-1"))
+    assert s.state.tasks[0].wt is None
 
 
 def test_select_task_with_worktree_skips_picker(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     wt = s.create_task_worktree("proj-1", "myrepo")
@@ -611,7 +597,7 @@ def test_select_task_with_worktree_skips_picker(tmp_path):
 
 
 def test_select_no_repos_alerts(tmp_path):
-    s, alerts, app = _loaded_state(
+    s, alerts, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     row = _task_row(app)
@@ -626,7 +612,7 @@ def test_select_no_repos_alerts(tmp_path):
 
 def test_open_task_linear(tmp_path):
     opened = []
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path,
         tasks=[
             {
@@ -648,20 +634,20 @@ def test_open_task_linear(tmp_path):
 
 def test_fix_creates_worktree_and_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
     s.fix("proj-1", "myrepo")
 
-    wt = Worktree("myrepo", "proj-1")
-    assert s.git.find_worktree(wt)
-    assert s.has_session(wt)
+    state = s.state
+    assert state.tasks[0].wt is not None
+    assert state.tasks[0].session is True
 
 
 def test_fix_blocks_when_session_running(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -674,7 +660,7 @@ def test_fix_blocks_when_session_running(tmp_path):
 
 def test_fix_blocks_when_worktree_dirty(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -692,7 +678,7 @@ def test_fix_blocks_when_worktree_dirty(tmp_path):
 
 def test_fix_action_picks_repo(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     row = _task_row(app)
@@ -701,14 +687,14 @@ def test_fix_action_picks_repo(tmp_path):
         dispatch("fix", row, s)
         _wait_loading(s)
 
-    wt = Worktree("myrepo", "proj-1")
-    assert s.git.find_worktree(wt)
-    assert s.has_session(wt)
+    state = s.state
+    assert state.tasks[0].wt is not None
+    assert state.tasks[0].session is True
 
 
 def test_fix_action_existing_worktree_no_picker(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     wt = s.create_task_worktree("proj-1", "myrepo")
@@ -725,7 +711,7 @@ def test_fix_action_existing_worktree_no_picker(tmp_path):
 
 def test_fix_action_cancelled_repo_pick(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_state(
+    s, _, app = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
     row = _task_row(app)
@@ -733,7 +719,7 @@ def test_fix_action_cancelled_repo_pick(tmp_path):
     with patch("jora.app.pick", return_value=None):
         dispatch("fix", row, s)
 
-    assert not s.git.find_worktree(Worktree("myrepo", "proj-1"))
+    assert s.state.tasks[0].wt is None
 
 
 # -- kill_session() ----------------------------------------------------------
@@ -741,7 +727,7 @@ def test_fix_action_cancelled_repo_pick(tmp_path):
 
 def test_kill_session_kills_running(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -755,7 +741,7 @@ def test_kill_session_kills_running(tmp_path):
 
 
 def test_kill_session_no_session(tmp_path):
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -768,40 +754,40 @@ def test_kill_session_no_session(tmp_path):
 
 def test_delete_worktree_removes_worktree_and_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
     wt = s.create_task_worktree("proj-1", "myrepo")
     s.create_session(wt)
-    assert s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is not None
     assert s.has_session(wt)
 
     s.delete_worktree(wt)
-    assert not s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is None
     assert not s.has_session(wt)
     assert "Removed" in " ".join(alerts)
 
 
 def test_delete_worktree_without_session(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
     wt = s.create_task_worktree("proj-1", "myrepo")
     s.create_session(wt)
     s.kill_session(wt)
-    assert s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is not None
     assert not s.has_session(wt)
 
     s.delete_worktree(wt)
-    assert not s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is None
     assert "Removed" in " ".join(alerts)
 
 
 def test_delete_worktree_no_worktree(tmp_path):
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -814,7 +800,7 @@ def test_delete_worktree_no_worktree(tmp_path):
 
 def test_clean_removes_stale_worktrees(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -823,7 +809,7 @@ def test_clean_removes_stale_worktrees(tmp_path):
     s.kill_session(wt)
 
     s.clean()
-    assert not s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is None
     assert "Removed" in " ".join(alerts)
 
 
@@ -834,7 +820,7 @@ def test_clean_removes_merged_pr_worktree(tmp_path):
         def is_branch_merged(self, slug, branch):
             return branch == "feature/proj-1"
 
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path,
         tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}],
         github=MergedGitHub(),
@@ -850,13 +836,13 @@ def test_clean_removes_merged_pr_worktree(tmp_path):
     _run(["git", "commit", "-m", "local work"], cwd=str(path))
 
     s.clean()
-    assert not s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is None
     assert "Removed" in " ".join(alerts)
 
 
 def test_clean_keeps_dirty_unmerged_worktree(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_state(
+    s, alerts, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -870,12 +856,12 @@ def test_clean_keeps_dirty_unmerged_worktree(tmp_path):
     _run(["git", "commit", "-m", "local work"], cwd=str(path))
 
     s.clean()
-    assert s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is not None
     assert "Nothing to clean" in " ".join(alerts)
 
 
 def test_clean_nothing_to_clean(tmp_path):
-    s, alerts, _ = _loaded_state(tmp_path)
+    s, alerts, _ = _loaded_store(tmp_path)
 
     s.clean()
     assert "Nothing to clean" in " ".join(alerts)
@@ -884,9 +870,9 @@ def test_clean_nothing_to_clean(tmp_path):
 # -- Queries -----------------------------------------------------------------
 
 
-def test_queries(tmp_path):
+def test_repos(tmp_path):
     _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
     )
 
@@ -895,14 +881,14 @@ def test_queries(tmp_path):
     wt = s.create_task_worktree("proj-1", "myrepo")
     s.create_session(wt)
 
-    assert s.git.find_worktree(wt)
+    assert s.state.tasks[0].wt is not None
     assert s.has_session(wt)
 
 
 def test_repos_sorted_by_usage(tmp_path):
     _init_repo(tmp_path, "alpha")
     _init_repo(tmp_path, "beta")
-    s, _, _ = _loaded_state(
+    s, _, _ = _loaded_store(
         tmp_path,
         tasks=[
             {"identifier": "PROJ-1", "title": "Task 1", "url": "u1"},
