@@ -14,6 +14,7 @@ from jora.actions.refresh import Refresh
 from jora.actions.select import Select
 from jora.notifications import Notifications
 from jora.terminal import Terminal
+from jora.text import word_wrap
 
 
 @dataclass
@@ -274,20 +275,17 @@ class App:
                 flat_idx += 1
 
         _, cur_row = self._at(self.tab.cursor)
-        parts = []
+        chunks = []
         if len(self._tabs) > 1:
-            parts.append("[⇥] switch")
-        pairs = [
-            (a.key, a.label)
+            chunks.append("[⇥] switch")
+        chunks.extend(
+            f"[{a.key}] {a.label}"
             for a in actions_for(cur_row)
             if a.enabled(self.store, cur_row)
-        ]
-        help_text = "  ".join(f"[{k}] {l}" for k, l in pairs)
-        if help_text:
-            parts.append(help_text)
-        if parts:
+        )
+        if chunks:
             lines.append("")
-            lines.append("  ".join(parts))
+            lines.extend(word_wrap(chunks, os.get_terminal_size().columns))
         msgs = self._notifications.active()
         if msgs:
             lines.append("")
@@ -316,7 +314,9 @@ def _pick_loop(title: str, items: list[str]) -> int | None:
             cur = _CURSOR if i == cursor else " "
             lines.append(f"{cur} {item}")
         lines.append("")
-        lines.append("[\u23ce] select  [esc] back")
+        lines.extend(
+            word_wrap(["[⏎] select", "[esc] back"], os.get_terminal_size().columns)
+        )
         term.render(lines)
 
         try:

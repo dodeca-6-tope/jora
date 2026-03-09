@@ -5,6 +5,7 @@ description = "Linear task manager CLI"
 requires-python = ">=3.10"
 dependencies = [
     "requests",
+    "wcwidth>=0.6.0",
 ]
 
 [project.scripts]
