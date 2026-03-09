@@ -14,6 +14,4 @@ class PR(Action):
                 s.on_alert("No PR for this task")
         else:
             item = row.data
-            s.on_open_url(
-                f"https://github.com/{item.repo_slug}/pull/{item.number}"
-            )
+            s.on_open_url(f"https://github.com/{item.repo_slug}/pull/{item.number}")

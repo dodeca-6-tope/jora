@@ -244,7 +244,9 @@ class App:
 
     def _draw(self):
         """Render the full screen: header, rows, help bar, notifications."""
-        spinner_ch = _SPINNER[self._spin // 3 % len(_SPINNER)] if self.store.loading else " "
+        spinner_ch = (
+            _SPINNER[self._spin // 3 % len(_SPINNER)] if self.store.loading else " "
+        )
 
         if self.store.loading and self.store.loading_text:
             term.render([f"{self.store.loading_text} {spinner_ch}"])
