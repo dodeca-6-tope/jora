@@ -498,6 +498,26 @@ def test_create_task_worktree_and_session(tmp_path):
     assert state.tasks[0].session is True
 
 
+def test_create_task_worktree_tracks_remote_branch(tmp_path):
+    repo = _init_repo(tmp_path, "myrepo")
+    # Push a branch with a commit to the remote
+    _run(["git", "checkout", "-b", "feature/proj-1"], cwd=str(repo))
+    (repo / "remote_work.txt").write_text("from remote")
+    _run(["git", "add", "."], cwd=str(repo))
+    _run(["git", "commit", "-m", "remote commit"], cwd=str(repo))
+    _run(["git", "push", "-u", "origin", "feature/proj-1"], cwd=str(repo))
+    _run(["git", "checkout", "main"], cwd=str(repo))
+    _run(["git", "branch", "-D", "feature/proj-1"], cwd=str(repo))
+
+    s, _, _ = _loaded_store(
+        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
+    )
+
+    wt = s.create_task_worktree("proj-1", "myrepo")
+    wt_path = s.git.find_worktree(wt)
+    assert (wt_path / "remote_work.txt").exists()
+
+
 def test_create_task_worktree_reuses_existing(tmp_path):
     _init_repo(tmp_path, "myrepo")
     s, _, _ = _loaded_store(

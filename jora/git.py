@@ -309,29 +309,48 @@ class Git:
         path.parent.mkdir(parents=True, exist_ok=True)
         cwd = str(rp)
 
-        branch_exists = (
-            subprocess.run(
-                ["git", "rev-parse", "--verify", branch],
-                capture_output=True,
-                text=True,
-                cwd=cwd,
-            ).returncode
-            == 0
-        )
-
         base = _default_branch(cwd)
         r = subprocess.run(
-            ["git", "fetch", "origin", base],
+            ["git", "fetch", "origin", base, branch],
             capture_output=True,
             text=True,
             cwd=cwd,
         )
         if r.returncode != 0:
-            raise RuntimeError(r.stderr.strip() or "Failed to fetch from origin")
+            # branch may not exist on remote — fetch just base
+            subprocess.run(
+                ["git", "fetch", "origin", base],
+                capture_output=True,
+                cwd=cwd,
+            )
 
-        if branch_exists:
+        local_exists = (
+            subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                capture_output=True,
+                cwd=cwd,
+            ).returncode
+            == 0
+        )
+        remote_exists = (
+            subprocess.run(
+                ["git", "rev-parse", "--verify", f"origin/{branch}"],
+                capture_output=True,
+                cwd=cwd,
+            ).returncode
+            == 0
+        )
+
+        if local_exists:
             r = subprocess.run(
                 ["git", "worktree", "add", str(path), branch],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+            )
+        elif remote_exists:
+            r = subprocess.run(
+                ["git", "worktree", "add", str(path), "-b", branch, "--track", f"origin/{branch}"],
                 capture_output=True,
                 text=True,
                 cwd=cwd,
