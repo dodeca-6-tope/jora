@@ -5,7 +5,7 @@ import collections
 import sys
 import webbrowser
 
-from jora import keychain
+from jora import creds
 from jora.app import App, dispatch, term
 from jora.config import Config
 from jora.git import Git
@@ -72,14 +72,14 @@ def main():
         return
 
     if args.command == "auth":
-        keychain.auth(
+        creds.auth(
             "Linear",
             "linear",
             "https://linear.app/settings/api",
             lambda k: LinearClient(k).whoami(),
             args.reset,
         )
-        keychain.auth(
+        creds.auth(
             "GitHub",
             "github",
             "https://github.com/settings/tokens",
@@ -106,8 +106,8 @@ def main():
             sys.exit(1)
         return
 
-    linear = LinearClient(keychain.require("linear", "Linear"))
-    github = GitHubClient(keychain.require("github", "GitHub"))
+    linear = LinearClient(creds.require("linear", "Linear"))
+    github = GitHubClient(creds.require("github", "GitHub"))
 
     pending = collections.deque()
     app = None
