@@ -1,0 +1,9 @@
+[project]
+name = "jora-telegram"
+version = "0.1.0"
+description = "Telegram bot plugin for jora"
+requires-python = ">=3.10"
+dependencies = ["pyTelegramBotAPI"]
+
+[project.scripts]
+jora-telegram = "bot:main"
