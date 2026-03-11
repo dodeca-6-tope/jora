@@ -2,6 +2,8 @@
 
 import argparse
 import collections
+import dataclasses
+import json
 import sys
 import webbrowser
 
@@ -39,6 +41,14 @@ compdef _jora jora
 """
 
 
+def _require_worktree(git, task_id):
+    wt = git.find_worktree_by_key(task_id.lower())
+    if not wt:
+        print(f"No worktree for {task_id}", file=sys.stderr)
+        sys.exit(1)
+    return wt
+
+
 # -- Entry point --------------------------------------------------------------
 
 
@@ -49,6 +59,10 @@ def _parse_args():
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="print shell init script (zsh)")
+
+    get_p = sub.add_parser("get", help="print tasks or reviews as JSON")
+    get_p.add_argument("resource", choices=["tasks", "reviews"])
+
     auth_p = sub.add_parser("auth", help="set Linear API key")
     auth_p.add_argument("--reset", action="store_true", help="replace existing key")
 
@@ -57,6 +71,12 @@ def _parse_args():
 
     rm_p = sub.add_parser("remove", help="unregister a repo")
     rm_p.add_argument("name", help="repo name from ~/.jora/repos/")
+
+    peek_p = sub.add_parser("peek", help="show tmux session content for a task")
+    peek_p.add_argument("task_id", help="task identifier (e.g. LTXD-516)")
+
+    diff_p = sub.add_parser("diff", help="show git diff for a task worktree")
+    diff_p.add_argument("task_id", help="task identifier (e.g. LTXD-516)")
 
     return parser.parse_args()
 
@@ -106,27 +126,46 @@ def main():
             sys.exit(1)
         return
 
+    if args.command == "peek":
+        wt = _require_worktree(git, args.task_id)
+        name = tmux.session_name(wt.repo, wt.key)
+        if not tmux.has_session(name):
+            print(f"No session for {args.task_id}", file=sys.stderr)
+            sys.exit(1)
+        print(tmux.capture_pane(name))
+        return
+
+    if args.command == "diff":
+        wt = _require_worktree(git, args.task_id)
+        print(git.worktree_diff(wt), end="")
+        return
+
+    # -- Commands that need API clients --------------------------------------
+
     linear = LinearClient(creds.require("linear", "Linear"))
     github = GitHubClient(creds.require("github", "GitHub"))
+    s = Store(git=git, tmux=tmux, linear=linear, github=github)
+
+    if args.command == "get":
+        s.fetch()
+        state = s.state
+        items = {"tasks": state.tasks, "reviews": state.reviews}[args.resource]
+        print(json.dumps([dataclasses.asdict(i) for i in items], indent=2))
+        return
+
+    # -- TUI -----------------------------------------------------------------
 
     pending = collections.deque()
-    app = None
-    s = Store(
-        git=git,
-        tmux=tmux,
-        linear=linear,
-        github=github,
-        on_alert=lambda text: app.alert(text),
-        on_attach=lambda name: (
-            term.suspend(),
-            tmux.attach_session(name),
-            term.resume(),
-        ),
-        on_open_url=webbrowser.open,
-        on_defer=pending.append,
-        on_change=lambda: app.rebuild(),
-    )
     app = App(store=s)
+    s.on_alert = app.alert
+    s.on_attach = lambda name: (
+        term.suspend(),
+        tmux.attach_session(name),
+        term.resume(),
+    )
+    s.on_open_url = webbrowser.open
+    s.on_defer = pending.append
+    s.on_change = app.rebuild
 
     with app:
         s.load()

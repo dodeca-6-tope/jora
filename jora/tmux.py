@@ -12,6 +12,10 @@ class Tmux:
             ["tmux", *args], capture_output=True, text=True
         ).stdout.strip()
 
+    def session_name(self, repo: str, key: str) -> str:
+        """Derive tmux session name from repo and key."""
+        return f"{self.prefix}{repo}·{key}".lower().replace(":", "_")
+
     def has_session(self, name: str) -> bool:
         r = subprocess.run(
             ["tmux", "has-session", "-t", name],
@@ -36,6 +40,10 @@ class Tmux:
 
     def kill_session(self, name: str) -> None:
         subprocess.run(["tmux", "kill-session", "-t", name], check=True)
+
+    def capture_pane(self, name: str) -> str:
+        """Return the visible content of a tmux session's pane."""
+        return self._run("capture-pane", "-t", name, "-p")
 
     def list_sessions(self) -> set[str]:
         out = self._run("list-sessions", "-F", "#{session_name}")

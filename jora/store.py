@@ -17,11 +17,11 @@ class Store:
     tmux: Tmux
     linear: Tracker
     github: GitHub
-    on_alert: Callable
-    on_attach: Callable
-    on_open_url: Callable
-    on_defer: Callable
-    on_change: Callable
+    on_alert: Callable = lambda *a: None
+    on_attach: Callable = lambda *a: None
+    on_open_url: Callable = lambda *a: None
+    on_defer: Callable = lambda *a: None
+    on_change: Callable = lambda *a: None
 
     loading: int = 0
     loading_text: str = ""
@@ -68,7 +68,7 @@ class Store:
 
     # -- Data loading --------------------------------------------------------
 
-    def _fetch(self):
+    def fetch(self):
         """Fetch tasks, PRs, and reviews from APIs in parallel."""
         self._done.clear()
 
@@ -117,7 +117,7 @@ class Store:
 
     def load(self):
         """Start initial data fetch in background."""
-        self.run(self._fetch)
+        self.run(self.fetch)
 
     _AUTO_RELOAD_INTERVAL = 10
 
@@ -129,11 +129,10 @@ class Store:
             self._last_load
             and time.time() - self._last_load >= self._AUTO_RELOAD_INTERVAL
         ):
-            threading.Thread(target=self._fetch, daemon=True).start()
+            threading.Thread(target=self.fetch, daemon=True).start()
 
     def _session_name(self, wt: Worktree) -> str:
-        """Derive tmux session name from a worktree identity."""
-        return f"{self.tmux.prefix}{wt.repo}·{wt.key}".lower().replace(":", "_")
+        return self.tmux.session_name(wt.repo, wt.key)
 
     # -- Queries -------------------------------------------------------------
 

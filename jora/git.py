@@ -131,6 +131,16 @@ class Git:
                 return Worktree(repo_dir.name, wt.name)
         return None
 
+    def worktree_diff(self, wt: Worktree) -> str:
+        path = self.find_worktree(wt)
+        result = subprocess.run(
+            ["git", "diff"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout
+
     def is_worktree_clean(self, wt: Worktree) -> bool:
         cwd = str(self.find_worktree(wt))
 
@@ -350,7 +360,16 @@ class Git:
             )
         elif remote_exists:
             r = subprocess.run(
-                ["git", "worktree", "add", str(path), "-b", branch, "--track", f"origin/{branch}"],
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    str(path),
+                    "-b",
+                    branch,
+                    "--track",
+                    f"origin/{branch}",
+                ],
                 capture_output=True,
                 text=True,
                 cwd=cwd,
