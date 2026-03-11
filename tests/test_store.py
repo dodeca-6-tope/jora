@@ -10,7 +10,7 @@ from jora.config import Config
 from jora.git import Git, Worktree
 from jora.github import CheckStatus, PullRequest, PullRequestReview
 from jora.linear import Tracker
-from jora.state import Store
+from jora.store import Store
 from jora.tmux import Tmux
 from tests.mocks import FakeGitHub, FakeTracker
 

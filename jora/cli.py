@@ -11,7 +11,7 @@ from jora.config import Config
 from jora.git import Git
 from jora.github import GitHubClient
 from jora.linear import LinearClient
-from jora.state import Store
+from jora.store import Store
 from jora.tmux import Tmux
 
 # -- Shell init (jora init <shell>) ------------------------------------------
