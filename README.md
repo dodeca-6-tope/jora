@@ -8,7 +8,7 @@ Task switcher for Linear. Worktrees + tmux sessions per task, PR/CI status at a 
 curl -fsSL https://raw.githubusercontent.com/dodeca-6-tope/jora/main/setup.sh | bash
 ```
 
-Installs jora and sets up shell integration (completions + cd wrapper).
+Installs jora and sets up shell completions.
 
 Requires [uv](https://docs.astral.sh/uv/) and [tmux](https://github.com/tmux/tmux).
 
