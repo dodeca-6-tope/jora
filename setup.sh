@@ -16,9 +16,9 @@ echo "Installing jora..."
 mkdir -p "$HOME/.jora"
 uv tool install --force "git+$REPO"
 
-# -- Shell integration ---------------------------------------------------------
+# -- Shell integration (completions) -------------------------------------------
 mkdir -p "$CUSTOM_DIR"
-jora init > "$CUSTOM_DIR/jora.zsh"
+uv tool run --from argcomplete register-python-argcomplete jora > "$CUSTOM_DIR/jora.zsh"
 echo "Shell integration → $CUSTOM_DIR/jora.zsh"
 
 echo ""

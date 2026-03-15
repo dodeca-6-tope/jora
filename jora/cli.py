@@ -7,6 +7,8 @@ import json
 import sys
 import webbrowser
 
+import argcomplete
+
 from jora import creds
 from jora.app import App, dispatch, term
 from jora.config import Config
@@ -15,31 +17,6 @@ from jora.github import GitHubClient
 from jora.linear import LinearClient
 from jora.store import Store
 from jora.tmux import Tmux
-
-# -- Shell init (jora init <shell>) ------------------------------------------
-
-_SHELL_INIT = """\
-jora() {
-  command jora "$@"
-  if [[ -f ~/.jora/cd ]]; then
-    cd "$(cat ~/.jora/cd)"
-    rm -f ~/.jora/cd
-  fi
-}
-_jora() {
-  if (( CURRENT == 2 )); then
-    compadd auth init add remove
-  elif (( CURRENT == 3 )); then
-    case $words[2] in
-      remove) compadd $(ls ~/.jora/repos/ 2>/dev/null) ;;
-      add) _directories ;;
-      init) ;;
-    esac
-  fi
-}
-compdef _jora jora
-"""
-
 
 def _require_worktree(git, task_id):
     wt = git.find_worktree_by_key(task_id.lower())
@@ -57,8 +34,6 @@ def _parse_args():
         prog="jora", description="Linear task switcher with git worktrees"
     )
     sub = parser.add_subparsers(dest="command")
-
-    sub.add_parser("init", help="print shell init script (zsh)")
 
     get_p = sub.add_parser("get", help="print tasks or reviews as JSON")
     get_p.add_argument("resource", choices=["tasks", "reviews"])
@@ -78,6 +53,7 @@ def _parse_args():
     diff_p = sub.add_parser("diff", help="show git diff for a task worktree")
     diff_p.add_argument("task_id", help="task identifier (e.g. LTXD-516)")
 
+    argcomplete.autocomplete(parser)
     return parser.parse_args()
 
 
@@ -86,10 +62,6 @@ def main():
     git = Git(cfg)
     tmux = Tmux(cfg.tmux_prefix)
     args = _parse_args()
-
-    if args.command == "init":
-        print(_SHELL_INIT)
-        return
 
     if args.command == "auth":
         creds.auth(
