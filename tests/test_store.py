@@ -390,7 +390,7 @@ def test_task_row_actions(tmp_path):
 
     row = app.sections[0].rows[0]
     help_text = _row_help(s, row)
-    for label in ["open", "fix", "linear", "PR"]:
+    for label in ["open", "linear", "PR"]:
         assert label in help_text
     assert "kill" not in help_text
 
@@ -647,99 +647,6 @@ def test_open_task_linear(tmp_path):
     s.open_task_linear("PROJ-1")
 
     assert opened == ["https://linear.app/proj/PROJ-1"]
-
-
-# -- fix() -------------------------------------------------------------------
-
-
-def test_fix_creates_worktree_and_session(tmp_path):
-    _init_repo(tmp_path, "myrepo")
-    s, _, _ = _loaded_store(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
-    )
-
-    s.fix("proj-1", "myrepo")
-
-    state = s.state
-    assert state.tasks[0].wt is not None
-    assert state.tasks[0].session is True
-
-
-def test_fix_blocks_when_session_running(tmp_path):
-    _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_store(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
-    )
-
-    wt = s.create_task_worktree("proj-1", "myrepo")
-    s.create_session(wt)
-    s.fix("proj-1", "myrepo")
-
-    assert "already running" in " ".join(alerts)
-
-
-def test_fix_blocks_when_worktree_dirty(tmp_path):
-    _init_repo(tmp_path, "myrepo")
-    s, alerts, _ = _loaded_store(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
-    )
-
-    wt = s.create_task_worktree("proj-1", "myrepo")
-    s.create_session(wt)
-    s.kill_session(wt)
-
-    path = s.git.find_worktree(wt)
-    (path / "dirty.txt").write_text("dirty")
-
-    s.fix("proj-1")
-
-    assert "has changes" in " ".join(alerts)
-
-
-def test_fix_action_picks_repo(tmp_path):
-    _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_store(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
-    )
-    row = _task_row(app)
-
-    with patch("jora.app.pick", return_value=0):
-        dispatch("fix", row, s)
-        _wait_loading(s)
-
-    state = s.state
-    assert state.tasks[0].wt is not None
-    assert state.tasks[0].session is True
-
-
-def test_fix_action_existing_worktree_no_picker(tmp_path):
-    _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_store(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
-    )
-    wt = s.create_task_worktree("proj-1", "myrepo")
-    s.create_session(wt)
-    s.kill_session(wt)
-    row = _task_row(app)
-
-    with patch("jora.app.pick") as mock_pick:
-        dispatch("fix", row, s)
-
-    mock_pick.assert_not_called()
-    assert s.has_session(wt)
-
-
-def test_fix_action_cancelled_repo_pick(tmp_path):
-    _init_repo(tmp_path, "myrepo")
-    s, _, app = _loaded_store(
-        tmp_path, tasks=[{"identifier": "PROJ-1", "title": "Task", "url": "u1"}]
-    )
-    row = _task_row(app)
-
-    with patch("jora.app.pick", return_value=None):
-        dispatch("fix", row, s)
-
-    assert s.state.tasks[0].wt is None
 
 
 # -- kill_session() ----------------------------------------------------------

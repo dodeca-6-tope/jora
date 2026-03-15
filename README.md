@@ -24,7 +24,6 @@ Pick a task, get a worktree and a tmux session. See PR reviews, CI status, and p
 | ------- | ----------------------------- |
 | ↑/↓     | Navigate                      |
 | enter   | Open task/review (worktree)   |
-| f       | Launch AI fix agent           |
 | k       | Kill tmux session             |
 | d       | Delete worktree               |
 | c       | Clean stale worktrees         |

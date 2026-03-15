@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 from jora.actions.clean import Clean
 from jora.actions.delete import Delete
-from jora.actions.fix import Fix
 from jora.actions.kill import Kill
 from jora.actions.open import Open
 from jora.actions.pr import PR
@@ -34,7 +33,7 @@ class Section:
     subtitle: str = ""
 
 
-_TASK_ACTIONS = [Select(), Fix(), Kill(), Open(), PR()]
+_TASK_ACTIONS = [Select(), Kill(), Open(), PR()]
 _REVIEW_ACTIONS = [Select(), Kill(), Delete(), PR()]
 
 _GLOBAL_ACTIONS = [Refresh(), Clean(), Quit()]

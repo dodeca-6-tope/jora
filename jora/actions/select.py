@@ -1,6 +1,16 @@
 from jora.actions.action import Action
-from jora.actions.fix import _pick_repo
 from jora.state import TaskItem
+
+
+def _pick_repo(s, task_id):
+    from jora.app import pick
+
+    repos = s.repos()
+    if not repos:
+        s.on_alert("No repos. Run: jora add <path>")
+        return None
+    idx = pick(f"Repo for {task_id}", repos)
+    return repos[idx] if idx is not None else None
 
 
 class Select(Action):

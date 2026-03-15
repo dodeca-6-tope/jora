@@ -3,7 +3,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from jora import agent
 from jora.git import Git, Worktree
 from jora.github import GitHub, PullRequest, analyze_pr
 from jora.linear import Task, Tracker
@@ -256,20 +255,6 @@ class Store:
             self.on_open_url(task.url)
         else:
             self.on_alert(f"Task {task_id} not found")
-
-    def fix(self, task_id: str, repo: str = None):
-        """Launch AI agent on a task. Creates worktree and session if needed."""
-        wt = self.git.find_worktree_by_key(task_id.lower())
-        if wt and self.has_session(wt):
-            self.on_alert("Session already running — use ⏎ to attach")
-            return
-        if wt and not self.git.is_worktree_clean(wt):
-            self.on_alert("Worktree has changes — use ⏎ to attach")
-            return
-        wt = self.create_task_worktree(task_id, repo)
-        self.create_session(wt)
-        name = self._session_name(wt)
-        self.tmux.send_keys(name, agent.command(f"Fix task {task_id}"))
 
     def kill_session(self, wt: Worktree):
         """Kill the tmux session for a worktree."""
