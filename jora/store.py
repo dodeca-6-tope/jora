@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from jora.git import Git, Worktree
 from jora.github import GitHub, PullRequest, analyze_pr
-from jora.linear import Task, Tracker
+from jora.tracker import Task, Tracker
 from jora.state import ReviewItem, State, TaskItem
 from jora.tmux import Tmux
 
@@ -248,8 +248,8 @@ class Store:
         self.on_change()
         return wt
 
-    def open_task_linear(self, task_id: str):
-        """Open the Linear issue URL for a task."""
+    def open_task_url(self, task_id: str):
+        """Open the issue URL for a task."""
         task = next((t for t in self._tasks if t.identifier == task_id), None)
         if task:
             self.on_open_url(task.url)

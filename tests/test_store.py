@@ -9,7 +9,7 @@ from jora.app import App, dispatch
 from jora.config import Config
 from jora.git import Git, Worktree
 from jora.github import CheckStatus, PullRequest, PullRequestReview
-from jora.linear import Tracker
+from jora.tracker import Tracker
 from jora.store import Store
 from jora.tmux import Tmux
 from tests.mocks import FakeGitHub, FakeTracker
@@ -390,7 +390,7 @@ def test_task_row_actions(tmp_path):
 
     row = app.sections[0].rows[0]
     help_text = _row_help(s, row)
-    for label in ["open", "linear", "PR"]:
+    for label in ["open", "task", "PR"]:
         assert label in help_text
     assert "kill" not in help_text
 
@@ -627,10 +627,10 @@ def test_select_no_repos_alerts(tmp_path):
     assert "No repos" in " ".join(alerts)
 
 
-# -- open_task_linear() ------------------------------------------------------
+# -- open_task_url() ------------------------------------------------------
 
 
-def test_open_task_linear(tmp_path):
+def test_open_task_url(tmp_path):
     opened = []
     s, _, _ = _loaded_store(
         tmp_path,
@@ -644,7 +644,7 @@ def test_open_task_linear(tmp_path):
         on_open_url=lambda url: opened.append(url),
     )
 
-    s.open_task_linear("PROJ-1")
+    s.open_task_url("PROJ-1")
 
     assert opened == ["https://linear.app/proj/PROJ-1"]
 

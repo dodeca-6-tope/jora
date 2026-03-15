@@ -1,4 +1,4 @@
-from jora.linear import Task, Tracker
+from jora.tracker import Task, Tracker
 
 
 class FakeTracker(Tracker):

@@ -2,8 +2,8 @@ from jora.actions.action import Action
 
 
 class Open(Action):
-    key = "l"
-    label = "linear"
+    key = "t"
+    label = "task"
 
     def run(self, s, row):
-        s.open_task_linear(row.data.id)
+        s.open_task_url(row.data.id)

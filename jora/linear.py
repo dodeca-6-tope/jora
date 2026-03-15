@@ -1,29 +1,8 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-
 import requests
 
-
-@dataclass
-class Task:
-    identifier: str
-    title: str
-    url: str
-
+from jora.tracker import Task, Tracker
 
 LINEAR_API_URL = "https://api.linear.app/graphql"
-
-
-class Tracker(ABC):
-    """Task/issue tracker backend (Linear, Jira, etc.)."""
-
-    @abstractmethod
-    def whoami(self) -> str:
-        """Return the authenticated user's display name."""
-
-    @abstractmethod
-    def fetch_tasks(self) -> list[Task]:
-        """Return active tasks assigned to the current user."""
 
 
 class LinearClient(Tracker):
