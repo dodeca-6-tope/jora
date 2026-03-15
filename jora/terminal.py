@@ -1,6 +1,7 @@
 """Low-level terminal: alt screen, raw mode, input, rendering."""
 
 import atexit
+import codecs
 import os
 import select
 import sys
@@ -15,6 +16,8 @@ class Terminal:
         self._fd = None
         self._saved = None
         self._active = False
+        self._atexit = False
+        self._utf8 = codecs.getincrementaldecoder("utf-8")("ignore")
 
     @property
     def active(self) -> bool:
@@ -27,7 +30,9 @@ class Terminal:
         self._active = True
         sys.stdout.write("\033[?1049h\033[?25l\033[?1004h")
         sys.stdout.flush()
-        atexit.register(self.cleanup)
+        if not self._atexit:
+            atexit.register(self.cleanup)
+            self._atexit = True
         return self
 
     def __exit__(self, *_):
@@ -81,15 +86,23 @@ class Terminal:
             return "enter"
         if ch == b"\x03":
             raise KeyboardInterrupt
-        return ch.decode("utf-8", errors="ignore")
+        # UTF-8 multi-byte: feed bytes through incremental decoder
+        result = self._utf8.decode(ch)
+        while not result:
+            if not select.select([self._fd], [], [], 0.01)[0]:
+                self._utf8.reset()
+                return None
+            result = self._utf8.decode(os.read(self._fd, 1))
+        return result
 
     def render(self, lines: list[str]):
         """Write full screen with synchronized update to avoid flicker."""
-        buf = "\033[?2026h\033[H"
+        parts = ["\033[?2026h\033[H"]
         for line in lines:
-            buf += line + "\033[K\n"
-        buf += "\033[J\033[?2026l"
-        sys.stdout.buffer.write(buf.encode())
+            parts.append(line)
+            parts.append("\033[K\n")
+        parts.append("\033[J\033[?2026l")
+        sys.stdout.buffer.write("".join(parts).encode())
         sys.stdout.buffer.flush()
 
     def _enter_raw(self):
